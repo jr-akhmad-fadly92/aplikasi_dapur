@@ -36,5 +36,3 @@ Sistem telah diimplementasikan dan digunakan aktif di 6 lokasi dapur:
 <img width="360" height="180" alt="image" src="https://github.com/user-attachments/assets/15a76b15-60ad-426f-a778-28376e205aec" />
 
 
-<img width="360" height="180" alt="image" src="https://github.com/user-attachments/assets/5005c1b8-baca-44b8-9636-406cdd9e0ddf" />
-<img width="360" height="180" alt="image" src="https://github.com/user-attachments/assets/6bb73e3d-ecf9-4e86-8187-4e92d94f7720" />
