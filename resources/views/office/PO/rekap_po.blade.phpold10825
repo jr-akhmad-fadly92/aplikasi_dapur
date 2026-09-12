@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>{{ $header }}</title>
+    @include('Template.head')
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+</head>
+<body class="hold-transition sidebar-mini">
+    <div class="wrapper">
+        
+        <!-- Navbar -->
+        @include('Template.navbar')
+        
+        <!-- Main Sidebar Container -->
+        @include('Template.left-sidebar')
+
+        <!-- Content Wrapper -->
+        <div class="content-wrapper">
+            <!-- Content Header -->
+            <div class="content-header">
+                <div class="container-fluid">
+                    <div class="row mb-2">
+                        <div class="col-sm-6">
+                            <h1 class="m-0 text-dark" id="currentTime">{{ $header }}</h1>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main content -->
+            <section class="content">
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h1>{{ $header }}</h1>
+                                    <h3 class="card-title d-inline-block me-3">
+                                       
+                                    </h3>
+                                    
+                                    
+                                </div>
+                                 
+                                <!-- Card Body -->
+                                <div class="card-body">
+                                    
+                                    
+                                    <!-- Tabel PO -->
+                                    <table id="tbl_list_po" class="table table-bordered table-hover" style="width: 100%">
+                                        <thead>
+                                            <tr>
+                                                <th>No</th>
+                                                <th>Nomor PO</th>
+                                                <th>Tanggal Pengajuan</th>
+                                                <th>Tanggal Approve</th>
+                                                <th>Supplier</th>
+                                                <th>Status PO</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+        
+  
+        <!-- Control Sidebar -->
+        <aside class="control-sidebar control-sidebar-dark">
+            <div class="p-3">
+                <h5>Title</h5>
+                <p>Sidebar content</p>
+            </div>
+        </aside>
+        
+        <!-- Footer -->
+        @include('Template.footer')
+    </div>
+    
+    <!-- REQUIRED SCRIPTS -->
+    @include('Template.script')
+    
+    <!-- DataTable Initialization -->
+    <script type="text/javascript">
+        $(document).ready(function () {
+            $('#tbl_list_po').DataTable({
+                ajax: '{{ url()->current() }}',
+                columns: [
+                    { data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, searchable: false },
+                    { data: 'nomor_po', name: 'nomor_po' },
+                    { data: 'tanggal_po_dibuat', name: 'tanggal_po_dibuat' },
+                    { data: 'tanggal_acc', name: 'tanggal_acc' },
+                    { data: 'nama_supplier', name: 'nama_supplier' },
+                    { data: 'status_po', name: 'status_po' },
+                    { data: 'action', name: 'action', orderable: false, searchable: false },
+                ]
+            });
+        });
+    </script>
+    
+    <!-- SweetAlert Notification -->
+    <script src="{{ asset('AdminLte/plugins/sweetalert2/sweetalert2.min.js') }}"></script>
+    <script>
+        @if(session('success'))
+            Swal.fire({
+                icon: "success",
+                title: "BERHASIL",
+                text: "{{ session('success') }}",
+                showConfirmButton: false,
+                timer: 2000
+            });
+        @elseif(session('error'))
+            Swal.fire({
+                icon: "error",
+                title: "GAGAL!",
+                text: "{{ session('error') }}",
+                showConfirmButton: false,
+                timer: 2000
+            });
+        @endif
+    </script>
+    
+    <!-- Update PO Event -->
+    
+</body>
+</html>

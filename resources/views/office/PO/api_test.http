@@ -1,0 +1,11 @@
+GET http://192.168.148.184/dapur/public/api/pengajuanpo
+Accept: application/json
+###
+get http://192.168.148.184/dapur/public/api/pengajuanpo/update-status
+Content-Type: application/json
+Accept: application/json
+
+{
+    "nomor_pengajuan": "PO-7888",
+    
+}

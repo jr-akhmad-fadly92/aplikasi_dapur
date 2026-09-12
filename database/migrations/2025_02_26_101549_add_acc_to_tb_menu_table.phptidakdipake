@@ -1,0 +1,37 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class AddAccToTbMenuTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::table('tb_menu', function (Blueprint $table) {
+            $table->string('nama_pengaju')->after('susu');
+            $table->date('tanggal_pengajuan')->after('nama_pengaju');
+            $table->date('tanggal_kirim')->after('tanggal_pengajuan');
+            $table->string('nama_acc')->nullable()->after('tanggal_kirim');
+            $table->date('tanggal_acc')->nullable()->after('nama_acc');
+            $table->enum('status_pengajuan', ['pending', 'approved', 'rejected'])->default('pending')->after('tanggal_acc');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::table('tb_menu', function (Blueprint $table) {
+            $table->dropColumn(['nama_pengaju', 'tanggal_pengajuan', 'tanggal_kirim', 'nama_acc', 'tanggal_acc', 'status_pengajuan']);
+        });
+    }
+}

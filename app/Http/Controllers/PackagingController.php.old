@@ -1,0 +1,246 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use PhpParser\Node\Expr\FuncCall;
+use DataTables;
+use App\Models\tbOmprengTransaksi;
+use App\Models\Menu;
+use App\Models\rincian_sekolah;
+use App\Models\User;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use App\Models\TbOmpreng;
+use Carbon\Carbon;
+use function PHPSTORM_META\type;
+
+class PackagingController extends Controller
+{
+    public function index_dashboard()
+    {
+        $header = "Dashboard Packaging";
+        return view('packaging.index_dashboard', compact('header'));
+    }
+    
+    public function index_packing()
+    {
+        $header = "Dashboard Packaging";
+        return view('packaging.index_packing', compact('header'));
+    }
+
+    public function index_riwayat_packaging()
+    {
+        $header = "Dashboard Packaging";
+        return view('packaging.index_riwayat_packaging', compact('header'));
+    }
+//--------------------------------------------------------------------------------
+    public function v_formPacking(Request $request)
+    {
+        $ip = request()->ip();
+        $segments = explode('.', $ip);
+        $id_ip = end($segments);
+        $header = "Scan Ompreng Keluar";
+        if(isset($request->line)){
+            $id_ip = $request->line;
+        }
+        
+        if(strtoupper($request->porsi) == 'A' || strtoupper($request->porsi) == 'B'){
+
+            $porsi = strtoupper($request->porsi);
+            
+        }
+        else{
+            $porsi = 'B';
+        }
+       // $menu = Menu::where('tanggal_kirim', date('Y-m-d'))->first();
+        $menu = Menu::where('tanggal_kirim', Carbon::now('Asia/Jakarta')->toDateString())->first();     
+        if($menu){
+            $total_ompreng_keluar = $this->hitungOmprengKeluar($menu->id, $id_ip);
+            $jumlah_kirim = rincian_sekolah::where('id_menu_harian', $menu->id)
+            ->sum('jumlah_penerima_total');
+            
+        }else{
+            //$total_ompreng_keluar = $this->hitungOmprengKeluar(0, $id_ip);
+
+            return view('packaging.formPacking', compact('header', 'menu', 'porsi', 'id_ip'));
+        }
+        //return $menu;
+        
+        
+        return view('packaging.formPacking', compact('header', 'menu', 'porsi', 'total_ompreng_keluar', 'jumlah_kirim', 'id_ip'));
+        //return redirect()->back()->with('error', 'Porsi tidak valid');
+        
+    }
+
+    public function dt_formPacking(Request $request)
+    {
+        // Optimasi: gunakan join langsung instead of eager loading untuk speed
+        $table = tbOmprengTransaksi::select(
+                'tb_ompreng_transaksi.kode_ompreng',
+                'tb_ompreng_transaksi.porsi',
+                'tb_ompreng.nomor as nomor'
+            )
+            ->join('tb_ompreng', 'tb_ompreng_transaksi.kode_ompreng', '=', 'tb_ompreng.kode_ompreng')
+            ->where('tb_ompreng_transaksi.tb_menu_id', $request->menu_id)
+            ->where('tb_ompreng_transaksi.porsi', $request->jenis_porsi)
+            ->where('tb_ompreng_transaksi.user_id', $request->user_id)
+            ->orderBy('tb_ompreng_transaksi.tanggal_keluar', 'desc')
+            ->limit(10)
+            ->get();
+            
+        return DataTables::of($table)
+            ->addIndexColumn()
+            ->editColumn('nomor', function ($row) {
+                return $row->nomor ?? '-';
+            })
+            ->make(true);
+    }
+
+    private function hitungRantang($kode_ompreng, $tb_menu_id)
+    {
+        $jumlah_ompreng = tbOmprengTransaksi::where('kode_rantang', $kode_ompreng)
+                ->where('tb_menu_id', $tb_menu_id)
+                ->count();
+        $total_ompreng = tbOmprengTransaksi::where('tb_menu_id', $tb_menu_id)
+        ->count();
+        return [
+            'jumlah_ompreng' => $jumlah_ompreng,
+            'total_ompreng' => $total_ompreng
+        ];
+    }
+
+    public function ajax_scanQR(Request $request)
+    {
+        $kodeQR = $request->kodeQR;
+      //  if (preg_match_all('/OP_01_\d+/', $kodeQR, $matches)) {
+      if (preg_match_all('/^OP_(?:01_)?\d+$/', $kodeQR, $matches)) {
+            foreach ($matches[0] as $kode_ompreng) {
+                $jenis_porsi = $request->jenis_porsi;
+                $tb_menu_id = $request->tb_menu_id;
+                $user_id = $request->user_id;//sebagai line serving
+                
+                // Gunakan transaction untuk batch operations
+                DB::beginTransaction();
+                try {
+                    // Langsung updateOrCreate tanpa cek count dulu (lebih cepat)
+                    /*TbOmpreng::updateOrCreate(
+                        ['kode_ompreng' => $kode_ompreng],
+                        [
+                            'jenis' => "Ompreng",
+                            'status' => "Diluar",
+                            'keterangan' => '',
+                        ]
+                    );*/
+
+                    tbOmprengTransaksi::updateOrCreate(
+                        [
+                            'kode_ompreng' => $kode_ompreng,
+                            'tb_menu_id' => $tb_menu_id,
+                        ],
+                        [
+                            'porsi' => $jenis_porsi,
+                            'user_id' => $user_id,
+                            'tanggal_keluar' => date('Y-m-d H:i:s'),
+                            'status' => 0
+                        ]
+                    );
+                    
+                    DB::commit();
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Terjadi kesalahan saat menyimpan data',
+                        'type' => 'error'
+                    ]);
+                }
+            }
+            $jumlah_ompreng = $this->hitungOmprengKeluar($tb_menu_id, $user_id);
+            
+                return response()->json([
+                    'success' => true,
+                    'jenis' => 'OP',
+                    //'jumlah_ompreng' => $jumlah_ompreng['jumlah_ompreng']+1,
+                    'total_ompreng_keluar' => $jumlah_ompreng['total_ompreng_keluar'],
+                    'jumlah_ompreng_porsi_a' => $jumlah_ompreng['jumlah_ompreng_porsi_a'],
+                    'jumlah_ompreng_porsi_b' => $jumlah_ompreng['jumlah_ompreng_porsi_b'],
+                    'total_ompreng_keluar_id' => $jumlah_ompreng['total_ompreng_keluar_id'],
+                    //'kode_rantang' => $kode_rantang,
+                    'type' => 'success',
+                    'message' => 'Ompreng '.$kode_ompreng.' berhasil discan'
+                ]);
+        } 
+        else if(strpos($kodeQR, 'porsi:') === 0){
+            $porsi = explode(':', $kodeQR);
+            if(strtoupper($porsi[1]) == 'A'){
+                $url = route('packing.create', ['porsi' => 'A', 'line' => $request->user_id]);
+            }
+            else if(strtoupper($porsi[1]) == 'B'){
+                $url = route('packing.create', ['porsi' => 'B', 'line' => $request->user_id]);
+            }
+            else{
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Porsi tidak valid',
+                    'type' => 'error'
+                ]);
+            }
+            return response()->json([
+                'success' => true,
+                'message' => 'redirect',
+                'url' => $url,
+                'type' => 'success'
+            ]);
+        }
+        else if(strpos($kodeQR, 'Petugas:') === 0){
+            $petugas = explode(':', $kodeQR);
+            if($petugas[1]){
+                return response()->json([
+                    'success' => true,
+                    'message' => 'update_petugas',
+                    'user_id' => $petugas[1],
+                    'type' => 'success'
+                ]);
+            }else{
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Petugas tidak ditemukan',
+                    'type' => 'error'
+                ]);
+            }
+        }
+        else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode ompreng salah / belum terdaftar',
+                'type'  => 'error'
+            ]);
+        }
+    }
+
+    private function hitungOmprengKeluar($id, $user_id)
+    {
+        // Optimasi: 1 query menggunakan conditional aggregation instead of 4 separate queries
+        $counts = tbOmprengTransaksi::where('tb_menu_id', $id)
+            ->selectRaw('COUNT(*) as total_ompreng_keluar')
+            ->selectRaw('SUM(CASE WHEN porsi = "A" THEN 1 ELSE 0 END) as jumlah_ompreng_porsi_a')
+            ->selectRaw('SUM(CASE WHEN porsi = "B" THEN 1 ELSE 0 END) as jumlah_ompreng_porsi_b')
+            ->selectRaw('SUM(CASE WHEN user_id = ? THEN 1 ELSE 0 END) as total_ompreng_keluar_id', [$user_id])
+            ->first();
+
+        return [
+            'jumlah_ompreng_porsi_a' => (int)$counts->jumlah_ompreng_porsi_a,
+            'jumlah_ompreng_porsi_b' => (int)$counts->jumlah_ompreng_porsi_b,
+            'total_ompreng_keluar' => (int)$counts->total_ompreng_keluar,
+            'total_ompreng_keluar_id' => (int)$counts->total_ompreng_keluar_id
+        ];
+    }
+
+    public function ajax_keepAlive()
+    {
+        return response()->json([
+            'message' => 'Keep Alive',
+        ]);
+    }
+}

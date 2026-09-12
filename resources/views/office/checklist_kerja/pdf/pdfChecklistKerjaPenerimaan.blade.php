@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Formulir Checklist Pekerjaan Harian</title>
+    <style>
+        
+        body {
+            font-family: Arial, sans-serif;
+            margin: 5px;
+            padding: 5px;
+            font-size: 7px;
+        }
+        h3 {
+            font-size: 9px;
+            margin: 5px 0;
+            font-weight: normal;
+        }
+        .container {
+            width: 100%;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 2px;
+            text-align: left;
+            font-size: 7px;
+            font-weight: normal;
+        }
+        .no-border th, .no-border td {
+            border: none;
+        }
+        .bordered th, .bordered td {
+            border: 1px solid black;
+        }
+        .section {
+            margin: 5px 0;
+        }
+        p {
+            margin: 0;
+            padding-left: 9px;
+        }
+        .page-break {
+            page-break-before: always;
+        }
+        .square {
+            height: 20px;
+            width: 20px;
+            border: 1px solid black;
+        }
+        .bold{
+            font-weight: bold;
+        }
+        .center{
+            text-align: center;
+        }
+        .right{
+            text-align: right;
+        }
+        .footer {
+        position: fixed;
+        bottom: -40px;
+        left: 0;
+        right: 0;
+        height: 30px;
+        text-align: right;
+        font-size: 7px;
+        color: #333;
+        padding-right: 20px;
+    }
+        
+    </style>
+</head>
+<body>
+@php
+    $max_page = 15;
+    $items = $table ?? collect();
+    $t_page = max(1, ceil(count($items->toArray()) / $max_page)); // minimal 1 halaman
+    
+    @endphp
+    
+    @for($i = 0; $i < $t_page; $i++)
+    @php $start = $i * $max_page; @endphp
+<div class="container">
+    <h3 class="bold center">FORMULIR CHEKCLIST PENERIMAAN BARANG HARIAN</h3>
+
+    <table class="no-border">
+        <tr>
+            <td><strong>Nama Dapur </strong></td>
+            <td>: {{$dapur->nama_dapur}}</td>
+            <td><strong>Tanggal Penerimaan</strong> </td>
+            <td>: {{date('d F Y',strtotime($tanggal))}}</td>
+        </tr>
+        <tr>
+            <td><strong>ID Dapur</strong> </td>
+            <td>: {{$dapur->nomor_dapur}} </td>
+            <td class="bold">ID Petugas</td>
+            <td>: .....................</td>
+        </tr>
+        
+        <tr>
+            <td ><strong>Alamat Dapur</strong></td>
+            <td colspan="3">:  {{$dapur->alamat_dapur}} </td>
+           
+        </tr>
+        <tr>
+            <td colspan="4" style="border-top: 1px solid black;"></td>
+        </tr>
+    </table>
+
+    
+
+    <div class="section">
+        <h3 class="bold">Daftar penerimaan barang:</h3>
+        
+        <table class="bordered"  style="margin-left: 20px;">
+            <tr>
+                <th class="bold center" style="width: 5%;" rowspan="2">No</th>
+                <th class="bold center" style="width: 5%;" rowspan="2">Jam<br>Datang</th>
+                <th class="bold center" style="width: 15%;" rowspan="2">Nama Barang</th>
+                <th class="bold center" style="width: 15%;" rowspan="2">No. PO</th>
+                <th class="bold center" style="width: 7%;" rowspan="2">Jumlah</th>
+                <th class="bold center" style="width: 5%;" rowspan="2">Satuan</th>
+                <th class="bold center" style="width: 4%;" rowspan="2">Box</th>
+                <th class="bold center" style="width: 12%;" colspan="3">Pemeriksaan</th>
+
+                <th class="bold center" style="width: 8%;" colspan="2">Jumlah</th>
+                
+            </tr>
+            <tr>
+                <td class="bold center">Visual</td>
+                <td class="bold center">Bau</td>
+                <td class="bold center">Textur</td>
+                <td class="bold center">Diterima</td>
+                <td class="bold center">TTD</td>
+                <!--td class="bold center">Ditolak</!--td>
+            </tr>
+            @forelse($items->slice($start, $max_page) as $index => $barangx)
+            <tr>
+                <td class="center">{{$index + 1}}</td>
+                <td class="center">{{$barangx->jam_menit??'-'}}</td>
+                <td>{{ $barangx->bahan ?? '-' }}</td>
+                <td>{{ $barangx->nomor_po ?? '-' }}</td>
+                <td class="right">{{ number_format($barangx->jumlah_bahan, 0, ',', '.') }}</td>
+                <td class="center">{{ $barangx->satuan ?? '-' }}</td>
+                <td>{{ $barangx->jumlah_box  ?? '-' }}</td>
+                <td><div class="square"></div></td> <!-- Kolom Visual -->
+                <td><div class="square"></div></td> <!-- Kolom Bau -->
+                <td><div class="square"></div></td> <!-- Kolom Textur -->
+                <td class="center">.......</td> <!-- Jumlah Diterima -->
+                <td class="center">.......</td> <!-- Jumlah Ditolak -->
+            </tr>
+            @empty
+                <tr>
+                    <td colspan="11" class="center">Data tidak ditemukan.</td>
+                </tr>
+            @endforelse
+        </table>
+
+        
+    </div>
+    <br>
+    <div class="section">
+        <table class="bordered"  style="margin-left: 20px;">
+            <tr>
+                <td class="bold">Catatan:
+                <br><br><br><br><br>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div style="margin-top:50px;">
+        <table class="no-border">
+            <tr>
+                <td style="width: 50%;" class="center">
+                    Petugas
+                    <br><br><br><br><br><br>
+                    ............................................
+                </td>
+                <td class="center">
+                    Diperiksa oleh :<br>
+                    Hasil: disetujui / ditolak *
+                    <br><br><br><br><br>
+                    ............................................
+                </td>
+                
+            </tr>
+            
+        </table>
+        
+</div>
+
+</div>
+<div class="footer">
+    <span class="pagenum"></span>
+</div>
+
+@if($i+1 < $t_page)
+      <div class="page-break"></div>
+      @endif
+@endfor
+
+</body>
+</html>

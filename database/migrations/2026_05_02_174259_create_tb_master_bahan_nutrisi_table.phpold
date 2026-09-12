@@ -1,0 +1,54 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateTbMasterBahanNutrisiTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::create('tb_master_bahan_nutrisi', function (Blueprint $table) {
+            $table->id();
+            $table->string('no')->nullable(); // nomor urut dari Excel
+            $table->string('kode')->unique(); // kode bahan (AP001, GR001, etc)
+            $table->string('nama_bahan'); // nama bahan makanan
+            $table->string('kelompok')->nullable(); // kelompok bahan (Nasi, Ikan, Telur, etc)
+            $table->string('mentah_olahan')->nullable(); // Tunggal / Olahan
+            $table->string('sumber')->nullable(); // Sumber data (TKPI 2019, DABM-1964, etc)
+            
+            // Komposisi Zat Gizi per 100g BDD
+            $table->decimal('air', 8, 2)->nullable(); // Air (g)
+            $table->decimal('energi', 8, 2)->nullable(); // Energi (Kal)
+            $table->decimal('protein', 8, 2)->nullable(); // Protein (g)
+            $table->decimal('lemak', 8, 2)->nullable(); // Lemak (g)
+            $table->decimal('karbohidrat', 8, 2)->nullable(); // Karbohidrat (g)
+            $table->decimal('serat', 8, 2)->nullable(); // Serat (g)
+            $table->decimal('abu', 8, 2)->nullable(); // Abu (g)
+            $table->decimal('natrium', 8, 2)->nullable(); // Natrium (mg)
+            $table->decimal('kalium', 8, 2)->nullable(); // Kalium (mg)
+            $table->decimal('kalsium', 8, 2)->nullable(); // Kalsium (mg)
+            $table->decimal('magnesium', 8, 2)->nullable(); // Magnesium (mg)
+            $table->decimal('fosfor', 8, 2)->nullable(); // Fosfor (mg)
+            $table->decimal('besi', 8, 2)->nullable(); // Besi (mg)
+            $table->decimal('seng', 8, 2)->nullable(); // Seng (mg)
+            
+            $table->timestamps();
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::dropIfExists('tb_master_bahan_nutrisi');
+    }
+}

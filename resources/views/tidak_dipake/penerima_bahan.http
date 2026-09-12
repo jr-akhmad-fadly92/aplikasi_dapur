@@ -1,0 +1,10 @@
+### Request Penerima Bahan
+POST http://10.8.0.14:8001/api/penerima-makan-gratis
+Content-Type: application/json
+
+{
+    "nomor_dapur": "tes",
+    "tanggal": "2025-03-12",
+    "jumlah_tk_sd_kls3":300,
+    "jumlah_sd_kls4_sma":300,
+}

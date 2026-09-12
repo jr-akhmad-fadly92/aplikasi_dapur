@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>{{ $header }}</title>
+    @include('Template.head')
+</head>
+<body class="hold-transition sidebar-mini">
+    <div class="wrapper">
+
+        <!-- Navbar -->
+        @include('Template.navbar')
+
+        <!-- Main Sidebar Container -->
+        @include('Template.left-sidebar')
+
+        <!-- Content Wrapper -->
+        <div class="content-wrapper">
+            <!-- Content Header -->
+            <div class="content-header">
+                <div class="container-fluid">
+                    <div class="row mb-2">
+                    <h1 class="m-0 text-dark" id="currentTime">Starter Page</h1>
+                        
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main content -->
+            
+
+            <section class="content">
+                <div class="container-fluid">
+                    <div class="row">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <div class="row">
+                                        <div class="col-md-9 col-xs-12">
+                                            <h3 >{{ $header }}</h3>
+                                        </div>
+                                        <div class="col-md-3 col-xs-12 text-right">
+                                            <button onclick="simpanDataSekolah()" class="btn btn-primary btn-sm">Simpan</button>
+                                            <a href="{{ url()->previous() }}" class="btn btn-default btn-sm">Kembali</a>
+                                        </div>
+                                    </div>
+                                    
+                                <!-- /.card-header -->
+                            
+                            <!-- /.card-body -->
+                            </div>
+                            
+                            <!-- /.card -->
+                            
+                            
+                            
+                        <!-- /.row -->
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <label for="auto_nama_sekolah">Cari NPSN Sekolah</label>
+                                    <select id="sekolahSelect" class="form-control" style="width: 100%"></select>  
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <form method="post" id="form_data_sekolah" enctype="multipart/form-data" class="col">
+                                        @csrf
+                                        <div class="card-body">                                          
+                                        @if(isset($sekolah))
+                                            <input type="hidden" name="id" value="{{ $sekolah->id }}">
+                                        @endif
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">NPSN</label>
+                                                <input type="text" class="form-control" name="npsn" step="any" placeholder="NPSN" @if (isset($sekolah)) value="{{ $sekolah->npsn }}" @endif>
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Nama Sekolah</label>
+                                                <input type="text" class="form-control" name="nama_sekolah" step="any" placeholder="Nama Sekolah" @if (isset($sekolah)) value="{{ $sekolah->nama_sekolah }}" @endif>
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Kepala sekolah</label>
+                                                <input type="text" class="form-control" name="kepala_sekolah" step="any" placeholder="Nama kepala sekolah" @if (isset($sekolah)) value="{{ $sekolah->kepala_sekolah }}" @endif>
+                                                
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Status</label>
+                                                <input type="text" class="form-control" name="status" step="any" placeholder="Status sekolah (S untuk swasta, N untuk negeri)" @if (isset($sekolah)) value="{{ $sekolah->status }}" @endif>
+                                                
+                                            </div>
+                                            <!-- Jenjang Sekolah -->
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Jenjang Sekolah</label>
+                                                <input type="text" class="form-control" name="nama_sekolah" step="any" placeholder="Jenjang sekolah" @if (isset($sekolah)) value="{{ $sekolah->bentuk }}" @endif>
+                                                
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Email</label>
+                                                <input type="text" class="form-control" name="email" step="any" placeholder="Email sekolah" @if (isset($sekolah)) value="{{ $sekolah->email }}" @endif>
+                                                
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Propinsi</label>
+                                                <input type="text" class="form-control" name="propinsi" step="any" placeholder="Propinsi sekolah" @if (isset($sekolah)) value="{{ $sekolah->propinsi }}" @endif>
+                                                <input type="text" class="form-control" name="kode_prop" step="any" placeholder="Propinsi sekolah" @if (isset($sekolah)) value="{{ $sekolah->kode_prop }}" @endif readonly hidden>
+                                            </div>
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Kota/Kabupaten</label>
+                                                <input type="text" class="form-control" name="kabupaten_kota" step="any" placeholder="Kota/Kabupaten sekolah" @if (isset($sekolah)) value="{{ $sekolah->kabupaten_kota }}" @endif>
+                                                <input type="text" class="form-control" name="kode_kab_kota" step="any" placeholder="kode kab kota" @if (isset($sekolah)) value="{{ $sekolah->kode_kab_kota }}" @endif hidden>
+                                            </div>
+
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Kecamatan</label>
+                                                <input type="text" class="form-control" name="kecamatan" step="any" placeholder="Kecamatan sekolah" @if (isset($sekolah)) value="{{ $sekolah->kecamatan }}" @endif>
+                                                <input type="text" class="form-control" name="kode_kec" step="any" placeholder="kode kecamatan" @if (isset($sekolah)) value="{{ $sekolah->kode_kec }}" @endif hidden>
+                                            </div>
+
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Kelurahan</label>
+                                                <input type="text" class="form-control" name="keluarahan" step="any" placeholder="Kelurahan sekolah" @if (isset($sekolah)) value="{{ $sekolah->keluarahan }}" @endif>
+                                                
+                                            </div>
+
+                                            <div class="form-group mb-3">
+                                                <label class="font-weight-bold">Alamat Sekolah</label>
+                                                <textarea type="text" class="form-control @error('alamat_sekolah') is-invalid @enderror" name="alamat_sekolah" step="any" placeholder="Alamat_ Sekolah">@if (isset($sekolah)){{ $sekolah->alamat_sekolah }} @endif</textarea>
+                                                    
+                                                
+                                                
+                                            </div>
+                                            <div class="form-group mb-3" style="text-align: right;">
+                                                
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Footer -->
+        @include('Template.footer')
+
+    </div>
+
+    <!-- Required Scripts -->
+    @include('Template.script')
+    <script>
+        var Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000
+        });
+    function simpanDataSekolah(){
+          var formData = new FormData(document.getElementById('form_data_sekolah'));
+          
+          $.ajax({
+            type: 'post',
+            url: "{{url('datasekolah/ajax_simpanDataSekolah')}}",
+            data: formData,
+            headers: {
+              "X-CSRF-TOKEN": $('meta[name="csrf-token"]').attr("content")
+            },
+            dataType: 'json',
+            contentType: false,
+            cache: false,
+            processData: false,
+            success: function(show){
+                Toast.fire({
+                    icon: show.type,
+                    title: show.message
+                })
+                window.location.replace("/detailSekolah-"+show.id);
+              
+            },
+            error: function(jqXHR, exception){
+              var errors = JSON.parse(jqXHR.responseText);
+              //alert();
+              var message = "";
+              if(errors['errors']){
+                message = errors.message + "<ul>";
+                $.each(errors.errors, function(i, item){
+                  message = message + "<li>" + item + "</li>";
+                });
+                message = message + "</ul>"
+              }
+              else{
+                message = jqXHR.responseText;
+              }
+              Toast.fire({
+                    icon: 'error',
+                    title: message
+                })
+              
+              //$(".loading").removeAttr('readonly','readonly');
+            }
+          })
+        }
+
+        
+
+
+        $(document).ready(function() {
+            $('#sekolahSelect').select2({
+                placeholder: 'Cari sekolah berdasarkan NPSN atau nama...',
+                ajax: {
+                    url: "{{ url('datasekolah/autoComplete') }}",
+                    dataType: 'json',
+                    delay: 250,
+                    data: function (params) {
+                        return {
+                            query: params.term // yang diketik user
+                        };
+                    },
+                    processResults: function (data) {
+                        return {
+                            results: data.map(function(sekolah) {
+                                return {
+                                    id: sekolah.npsn,
+                                    text: sekolah.npsn + ' - ' + sekolah.sekolah
+                                };
+                            })
+                        };
+                    },
+                    cache: true
+                },
+                minimumInputLength: 2
+            });
+
+            $('#sekolahSelect').on('select2:select', function (e) {
+                var data = e.params.data;
+                $('#npsnInput').val(data.id);
+                $('#namaSekolahInput').val(data.nama);
+            });
+        });
+    </script>
+
+</body>
+</html>

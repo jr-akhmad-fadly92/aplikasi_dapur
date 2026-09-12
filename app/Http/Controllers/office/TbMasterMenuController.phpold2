@@ -1,0 +1,2143 @@
+<?php
+
+namespace App\Http\Controllers\office;
+
+use App\Http\Controllers\Controller;
+
+use App\Models\Menu;
+use App\Models\Resep;
+use App\Models\rincian_menu_harian;
+use App\Models\MenuBahan;
+use App\Models\rincian_sekolah;
+use App\Models\DataSekolah;
+use App\Models\DataDapur;
+use App\Models\TingkatanSekolah;
+use Barryvdh\DomPDF\Facade\Pdf;
+use App\Exports\LaporanRekapMenuExport;
+use App\Models\BuahRumusPerhitunganBuah;
+use App\Models\KomponenSehat;
+use App\Models\PaketMenu;
+use App\Models\PerhitunganBumbu;
+use App\Models\RumusPerhitunganProtein;
+use App\Models\RumusPerhitunganSayur;
+use App\Models\SpesifikasiBahan;
+use App\Models\tb_karyawan;
+use App\Models\TbMasterBahan;
+use App\Models\TbBantuBahanPo;
+use App\Models\TbSatuan;
+use App\Models\TbGramasiMenu;
+use App\Models\TbRincianKontrak;
+use App\Models\TbRumusPerhitunganKarbo;
+use App\Models\MenuGiziHarian;
+use Illuminate\Http\Request;
+
+
+use Yajra\DataTables\Facades\DataTables;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\LaporanGiziHarianExport;
+use Illuminate\Support\Facades\Validator;
+//import return type View
+use Illuminate\View\View;
+//import return type redirectResponse
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+
+class TbMasterMenuController extends Controller
+{
+    //
+    public function index()
+    {
+        $header = "Pengajuan Menu";
+        if (request()->ajax()) {
+            //$users = User::query();
+            $Menu = Menu::select(
+
+                'tb_menu.*',
+
+            )
+                //->whereDate('tb_menu.tanggal_kirim', '>=', Carbon::today()) // Filter berdasarkan tanggal
+                ->where('tb_menu.status_pengajuan', '!=', 'rejected') // Hindari data yang reject
+                ->latest()
+               // ->limit(40) // Ambil hanya 40 data terakhir
+                ->get();
+
+            //$Menu = Menu::all();
+            return DataTables::of($Menu)
+                ->addIndexColumn() // Menambah index
+                ->addColumn('nama_karbohidrat', function ($row) {
+                    $resep = Resep::find($row->karbohidrat);
+                    if ($resep) {
+                        return $resep->nama_resep;
+                    } else {
+                        return '--';
+                    }
+                })
+                ->addColumn('nama_protein', function ($row) {
+                    $resep = Resep::find($row->protein);
+                    if ($resep) {
+                        return $resep->nama_resep;
+                    } else {
+                        return '--';
+                    }
+                })
+                ->addColumn('nama_sayur', function ($row) {
+                    $resep = Resep::find($row->sayur);
+                    if ($resep) {
+                        return $resep->nama_resep;
+                    } else {
+                        return '--';
+                    }
+                })
+                ->addColumn('nama_susu', function ($row) {
+                    $resep = Resep::find($row->susu);
+                    if ($resep) {
+                        return $resep->nama_resep;
+                    } else {
+                        return '--';
+                    }
+                })
+                ->addColumn('nama_buah', function ($row) {
+                    $resep = Resep::find($row->buah);
+                    if ($resep) {
+                        return $resep->nama_resep;
+                    } else {
+                        return '--';
+                    }
+                })
+                ->addColumn('jumlah_porsi', function ($row) {
+                    $jumlah = rincian_sekolah::where('id_menu_harian',$row->id)->sum('jumlah_penerima_total');
+                    return $jumlah.' porsi';
+                })
+                ->addColumn('tanggal_masak', function ($row) {
+
+                //return Carbon::parse($row->tanggal_kirim)->translatedFormat('l, d F Y') . ' | '. $row->status_pengajuan;
+                return $row->menu . ' | ' . $row->status_pengajuan;
+                })
+                ->addColumn('action', function ($row) {
+                if ($row->tanggal_kirim < '2025-08-19') {
+                    $status = 'yes';
+                    if (auth()->check() && in_array(auth()->user()->level, ['backoffice'])) {
+                        $btn = '<a href="' . route('mastermenu.edit', $row['id']) . '" class="edit btn btn-primary btn-sm " id="btn-edit-post" data-id="' . $row['id'] . '">Edit</a>
+                            <a href="' . route('mastermenu.delete', $row['id']) . '" class="edit btn btn-danger btn-sm delete-button" id="btn-delete-post " data-id="' . $row['id'] . '" >Delete</a>
+                             <button class="btn btn-warning btn-sm cancel-button" data-id="' . $row['id'] . '">Cancel</button>
+                            <a href="' . route('rincian_bahan', $row['id']) . '" class="edit btn btn-success btn-sm " id="btn-delete-post " data-id="' . $row['id'] . '" >Detail Bahan</a>
+                            <a href="' . route('pdf_pengajuan_menu', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Download</a>
+                            <a href="' . route('pdf_pengajuan_menu_3', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Pengajuan</a>
+                            <!--button class="btn btn-success btn-sm acc-button" data-id="' . $row['id'] . '">ACC</button-->
+                            <a href="' . route('cetak.rekap.ceklist', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist masak</a>
+                            <a href="' . route('cetak.rekap.ceklist_hasil_masak', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist Hasil Masak</a>
+                            ';
+                    } else {
+                        $btn = '<a href="' . route('rincian_bahan', $row['id']) . '" class="edit btn btn-success btn-sm " id="btn-delete-post " data-id="' . $row['id'] . '" >Detail Bahan</a>
+                            <a href="' . route('pdf_pengajuan_menu', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Download</a>
+                            <a href="' . route('pdf_pengajuan_menu_3', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Pengajuan</a>
+                            <button class="btn btn-success btn-sm acc-button" data-id="' . $row['id'] . '">ACC</button>
+                            <a href="' . route('cetak.rekap.ceklist', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist masak</a>
+                            <a href="' . route('cetak.rekap.ceklist_hasil_masak', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist Hasil Masak</a>
+                            ';
+                    }
+                } else {
+                    $status = 'no';
+                    if (auth()->check() && in_array(auth()->user()->level, ['backoffice'])) {
+                        $btn = '<a href="' . route('mastermenu.edit', $row['id']) . '" class="edit btn btn-primary btn-sm " id="btn-edit-post" data-id="' . $row['id'] . '">Edit</a>
+                            <a href="' . route('mastermenu.delete', $row['id']) . '" class="edit btn btn-danger btn-sm delete-button" id="btn-delete-post " data-id="' . $row['id'] . '" >Delete</a>
+                             <button class="btn btn-warning btn-sm cancel-button" data-id="' . $row['id'] . '">Cancel</button>
+                            <a href="' . route('rincian_bahan', $row['id']) . '" class="edit btn btn-success btn-sm " id="btn-delete-post " data-id="' . $row['id'] . '" >Detail Bahan</a>
+                            <a href="' . route('pdf_pengajuan_menu', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Download</a>
+                            <a href="' . route('pdf_pengajuan_menu_3', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Pengajuan</a>
+                            <!--button class="btn btn-success btn-sm acc-button" data-id="' . $row['id'] . '">ACC</button-->
+                            <a href="' . route('cetak.rekap.ceklist', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist masak</a>
+                            <a href="' . route('cetak.rekap.ceklist_hasil_masak', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist Hasil Masak</a>
+                            ';
+                    } else {
+                        $btn = '<a href="' . route('rincian_bahan', $row['id']) . '" class="edit btn btn-success btn-sm " id="btn-delete-post " data-id="' . $row['id'] . '" >Detail Bahan</a>
+                            <a href="' . route('pdf_pengajuan_menu', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Download</a>
+                            <a href="' . route('pdf_pengajuan_menu_3', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Pengajuan</a>
+                            <button class="btn btn-success btn-sm acc-button" data-id="' . $row['id'] . '">ACC</button>
+                            <a href="' . route('cetak.rekap.ceklist', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist masak</a>
+                            <a href="' . route('cetak.rekap.ceklist_hasil_masak', $row['id']) . '" class="edit btn btn-secondary btn-sm " id="btn-download-post">Checklist Hasil Masak</a>
+                            ';
+                    }
+                }  
+                
+                    
+                    return $btn;
+                })
+                ->rawColumns(['action', 'jumlah_porsi'])
+                ->make(true);
+        }
+        return view('office/mastermenu.index', compact('header'));
+    }
+
+
+    public function edit(string $id): View
+    {
+        $header = "Edit Menu";
+        //get product by ID
+        $Menu = Menu::findOrFail($id);
+        $karyawan = tb_karyawan::all();
+        $gramasi_menu = TbGramasiMenu::where('id_menu',$id)->get();
+        $karbohidrat = Resep::where('id_komponen_sehat', 1)->get();
+        $protein = Resep::where('id_komponen_sehat', 2)->get();
+        $sayur = Resep::where('id_komponen_sehat', 3)->get();
+        $buah = Resep::where('id_komponen_sehat', 4)->get();
+        $susu = Resep::where('id_komponen_sehat', 5)->get();
+        
+
+        //render view with product
+        return view('office/mastermenu.edit', compact('Menu', 'karyawan','karbohidrat', 'protein', 'sayur','buah','susu', 'header'));
+    }
+
+    public function update(Request $request, $id): RedirectResponse
+    {
+        //validate form
+        $request->validate([
+            'menu'         => 'required|min:1',
+            'nama_pengaju' => 'required',
+            'tanggal_pengajuan' => 'required|min:1',
+            'tanggal_kirim' => 'required|min:1',
+            
+
+        ]);
+
+        //get product by ID
+        $menu = Menu::findOrFail($id);
+
+
+
+        //update product without image
+        $menu->update([
+            'menu'                      => $request->menu,
+           
+            'nama_pengaju'              => $request->nama_pengaju,
+            'tanggal_pengajuan'         => $request->tanggal_pengajuan,
+            'tanggal_kirim'             => $request->tanggal_kirim,
+            
+        ]);
+        
+        //redirect to index
+        return redirect()->route('mastermenu.index')->with(['success' => 'Data Berhasil Diinput']);
+    }
+
+    public function create(): View|RedirectResponse
+    {
+        $jumlah_sekolah = DataSekolah::where('jumlah_siswa', '>', 0)->count();
+
+        if ($jumlah_sekolah == 0) {
+            return redirect()->route('mastermenu.index')->with(['error' => 'mohon isi data sekolah terlebih dahulu']);
+        }
+        $header = "Tambah menu";
+        $karyawan = tb_karyawan::all();
+        $gramasi_menu = TbGramasiMenu::all();
+        $Menu = Menu::all();
+        //$karbohidrat = Resep::where('id_komponen_sehat', 1)->get();
+        $karbohidrat = $resep = DB::table('tb_resep as r')
+            //->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+            ->select('r.id', 'r.nama_resep')
+            ->where('id_komponen_sehat', 1)
+            ->groupBy('r.id', 'r.nama_resep')
+            ->get();
+
+        $protein = $resep = DB::table('tb_resep as r')
+           // ->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+            ->select('r.id', 'r.nama_resep')
+            ->where('id_komponen_sehat', 2)
+            ->groupBy('r.id', 'r.nama_resep')
+            ->get();
+        $sayur = $resep = DB::table('tb_resep as r')
+           // ->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+            ->select('r.id', 'r.nama_resep')
+            ->where('id_komponen_sehat', 3)
+            ->groupBy('r.id', 'r.nama_resep')
+            ->get();
+        $buah = $resep = DB::table('tb_resep as r')
+           // ->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+            ->select('r.id', 'r.nama_resep')
+            ->where('id_komponen_sehat', 4)
+            ->groupBy('r.id', 'r.nama_resep')
+            ->get();
+        $susu = $resep = DB::table('tb_resep as r')
+            ->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+            ->select('r.id', 'r.nama_resep')
+            ->where('id_komponen_sehat', 5)
+            ->groupBy('r.id', 'r.nama_resep')
+            ->get();
+
+        //render view with product
+        return view('office/mastermenu.create', compact('Menu', 'karyawan', 'karbohidrat', 'protein', 'sayur', 'buah', 'susu', 'header'));
+        
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        //validate form
+        $request->validate([
+            'menu'         => 'required|min:1',
+            'nama_pengaju' => 'required|min:1',
+            'tanggal_pengajuan' => 'required|min:1',
+            'tanggal_kirim' => 'required|min:1',
+            'jam_pelayanan' => 'required',
+            //gramasi input A 
+            'gramasi_karbo_a' => 'required',
+            'porsi_tray_a' => 'required',
+            'kg_tray_a' => 'required',
+            'gramasi_lauk_a' => 'required',
+            'gramasi_sayur_utama_a' => 'required',
+            'gramasi_sayur_kedua_a' => 'required',
+            'gramasi_buah_a' => 'required',
+            'gramasi_suplemen_a' => 'required',
+            //gramasi input A 
+            'gramasi_karbo_b' => 'required',
+            'porsi_tray_b' => 'required',
+            'kg_tray_b' => 'required',
+            'gramasi_lauk_b' => 'required',
+            'gramasi_sayur_utama_b' => 'required',
+            'gramasi_sayur_kedua_b' => 'required',
+            'gramasi_buah_b' => 'required',
+            'gramasi_suplemen_b' => 'required'
+
+        ]);
+        Carbon::setLocale('id');
+        $cek_menu = Menu::where('tanggal_kirim' ,$request->tanggal_kirim)->count();
+        if ($cek_menu >= 6) {
+            return redirect()->route('mastermenu.create')->with(['error' => 'Data Menu Pernah Dibuat']);
+        }
+        $hariKirim = Carbon::parse($request->tanggal_kirim)->translatedFormat('l');
+        //create product
+        Menu::create([
+            'menu'              => $request->menu,
+           // 'karbohidrat'       => $request->karbohidrat,
+           // 'protein'           => $request->protein,
+           // 'sayur'             => $request->sayur,
+           // 'buah'              => $request->buah,
+           // 'susu'              => $request->susu,
+            'nama_pengaju'      => $request->nama_pengaju,
+            'tanggal_pengajuan' => $request->tanggal_pengajuan,
+            'tanggal_kirim'     => $request->tanggal_kirim,
+            'jam_pelayanan'     => $request->tanggal_kirim . ' ' . $request->jam_pelayanan . ':00',
+            'nomor_pengajuan'   => '',
+            'status'            => 'draft',
+            'hari_kirim'        => $hariKirim
+
+        ]);
+        $data_terakhir = Menu::latest()->first();
+        TbGramasiMenu::create([
+            'id_menu' => $data_terakhir->id,
+            'gramasi_karbo_a' => $request->gramasi_karbo_a,
+            'porsi_tray_a' => $request->porsi_tray_a,
+            'kg_tray_a' => $request->kg_tray_a,
+            'gramasi_lauk_a' => $request->gramasi_lauk_a,
+            'gramasi_sayur_utama_a' => $request->gramasi_sayur_utama_a,
+            'gramasi_sayur_kedua_a' => $request->gramasi_sayur_kedua_a,
+            'gramasi_buah_a' => $request->gramasi_buah_a,
+            'gramasi_suplemen_a' => $request->gramasi_suplemen_a,
+            'gramasi_karbo_b' => $request->gramasi_karbo_b,
+            'porsi_tray_b' => $request->porsi_tray_b,
+            'kg_tray_b' => $request->kg_tray_b,
+            'gramasi_lauk_b' => $request->gramasi_lauk_b,
+            'gramasi_sayur_utama_b' => $request->gramasi_sayur_utama_b,
+            'gramasi_sayur_kedua_b' => $request->gramasi_sayur_kedua_b,
+            'gramasi_buah_b' => $request->gramasi_buah_b,
+            'gramasi_suplemen_b' => $request->gramasi_suplemen_b
+            
+
+        ]);
+
+        // Ambil nama hari dari tanggal_kirim (contoh: "sabtu")
+        $hariKirim = strtolower(Carbon::parse($request->tanggal_kirim)->translatedFormat('l'));
+
+        // Ambil data sekolah yang hanya aktif di hari_kirim
+        $sekolah = DataSekolah::join('sekolah_aktif', 'tb_data_sekolah.id', '=', 'sekolah_aktif.id_tb_data_sekolah')
+            ->where("sekolah_aktif.$hariKirim", 1) // Hanya sekolah yang aktif pada hari kirim
+            ->select(
+                'tb_data_sekolah.*',
+                
+            )
+            ->get();
+
+        foreach ($sekolah as $data) {
+            rincian_sekolah::create([
+                'id_menu_harian' => $data_terakhir->id,
+                'id_sekolah' => $data->id,
+                'jumlah_penerima_total' => $data->jumlah_siswa,
+                'jumlah_penerima_a' => $data->jumlah_a ?? 0,//tambahan jika null maka 0
+                'jumlah_penerima_b' => $data->jumlah_b ?? 0,//tambahan jika null maka 0
+                'status' => 0
+            ]);
+        }
+        
+        //redirect to index
+        //return redirect()->route('mastermenu.index')->with(['success' => 'Data Berhasil Disimpan!']);
+
+        //===========================================================update =======================================//
+        $idmenu = $data_terakhir->id;
+        $sekolah = rincian_sekolah::where('id_menu_harian',$idmenu)->get();
+                $menu = Menu::findOrFail($idmenu);
+                $bulan_pengajuan = date('Ym', strtotime($menu->tanggal_pengajuan)); // Format YYYY-MM untuk filter
+                $datadapur = DataDapur::first();
+                $count = Menu::whereMonth('tanggal_pengajuan', date('m', strtotime($menu->tanggal_pengajuan)))
+                ->whereYear('tanggal_pengajuan', date('Y', strtotime($menu->tanggal_pengajuan)))
+                ->count();
+                $jumlah_a = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_a');
+                if($jumlah_a > 0 )
+                {
+                    $nomor_pengajuan = 'PMH-' . $datadapur->nomor_dapur . '-' . $bulan_pengajuan . '' . str_pad($count, 3, '0', STR_PAD_LEFT).'A';
+                
+                }else{
+                    $nomor_pengajuan = 'PMH-' . $datadapur->nomor_dapur . '-' . $bulan_pengajuan . '' . str_pad($count, 3, '0', STR_PAD_LEFT).'B';
+                
+                }
+                
+                $menu->update([
+                    'nomor_pengajuan' => $nomor_pengajuan,
+                ]);
+                $data_hasil_sekolah = DB::table('rincian_sekolah')
+                ->selectRaw('
+                    SUM(jumlah_penerima_total) AS total_penerima, 
+                    SUM(jumlah_penerima_a) AS total_penerima_a, 
+                    SUM(jumlah_penerima_b) AS total_penerima_b
+                ')
+                ->where('id_menu_harian', $idmenu)
+                ->first(); // Mengambil satu baris hasil query
+
+                // input histori menu a
+                $cek_histori_a =  DB::table('tb_histori_menu')->where('id_menu', $idmenu)
+                                  ->where('kode','A')->count();
+                if($cek_histori_a < 1 )
+                {
+                    DB::table('tb_histori_menu')->insert([
+                        'id_menu' => $idmenu,
+                        'kode' => 'A',
+                        'total_porsi' => $data_hasil_sekolah->total_penerima_a,
+                    ]);
+                }
+
+                // input histori menu b
+                $cek_histori_b =  DB::table('tb_histori_menu')->where('id_menu', $idmenu)
+                    ->where('kode', 'B')->count();
+                if ($cek_histori_a < 1) {
+                    DB::table('tb_histori_menu')->insert([
+                        'id_menu' => $idmenu,
+                        'kode' => 'B',
+                        'total_porsi' => $data_hasil_sekolah->total_penerima_b,
+                    ]);
+                }
+
+                
+
+
+            return redirect('/rincian_bahan/' . $idmenu)->with('success', 'Data Berhasil dimasukkan!');
+        //return redirect()->route('rincian_sekolah_harian', $data_terakhir->id)->with(['success' => 'Data Berhasil Dinput']);
+    }
+
+    public function destroy($id)
+    {
+        //get product by ID
+        DB::table('rincian_menu_harian')->where('id_menu_harian', $id)->delete();
+        DB::table('rincian_sekolah')->where('id_menu_harian', $id)->delete();
+        DB::table('tb_gramasi_menu')->where('id_menu', $id)->delete();
+        DB::table('tb_histori_menu')->where('id_menu', $id)->delete();
+
+        // Hapus data dari tb_menu
+        DB::table('tb_menu')->where('id', $id)->delete();
+
+        //redirect to index
+        return redirect()->route('mastermenu.index')->with(['success' => 'Data Berhasil Dihapus!']);
+    }
+
+        public function index_rincian_sekolah_harian($idmenu)
+        {
+            $header = "Rincian Sekolah Penerima";
+            $data_menu_harian = Menu::where('id', $idmenu)->first();
+            $dapur = DataDapur::first();
+            $jumlah = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_total');
+
+        if (request()->ajax()) {
+                //$users = User::query();
+                $sekolah = rincian_sekolah::where('id_menu_harian', $idmenu)->join('tb_data_sekolah as d_sekolah', 'rincian_sekolah.id_sekolah', '=', 'd_sekolah.id')
+                    ->select('rincian_sekolah.*', 'd_sekolah.nama_sekolah as sekolah', 'd_sekolah.jenjang_sekolah')
+                    ->get();
+
+                //$Menu = Menu::all();
+                return DataTables::of($sekolah)
+                    ->addIndexColumn() // Menambah index
+                    ->addColumn('nama_dan_tingkat_sekolah', function ($row){
+                        return $row->sekolah." (". $row->jenjang_sekolah.")";
+                        
+                    })
+                    ->addColumn('input_jumlah', function ($row) {
+                        return $row->jumlah_penerima_total . ' anak';
+                    })
+                    ->addColumn('input_jumlah_a', function ($row) {
+                        return '<input type="number" class="form-control jumlaha" data-id="' . $row->id . '" value="' . $row->jumlah_penerima_a . '"> anak';
+                    })
+                    ->addColumn('input_jumlah_b', function ($row) {
+                        return '<input type="number" class="form-control jumlahb" data-id="' . $row->id . '" value="' . $row->jumlah_penerima_b . '"> anak';
+                    })
+                    ->addColumn('action', function ($row) {
+              
+                    return '<button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                    })
+                    ->rawColumns(['action', 'input_jumlah', 'input_jumlah_b', 'input_jumlah_a', 'nama_dan_tingkat_sekolah'])
+                    ->make(true);
+            }
+            return view('office/mastermenu.index_rincian_sekolah', compact('header', 'data_menu_harian','dapur', 'jumlah', 'idmenu'));
+        }
+
+        public function updateJumlahSekolah(Request $request)
+        {
+            $request->validate([
+                'id' => 'required|exists:rincian_sekolah,id',
+                'jumlaha' => 'required|numeric|min:0',
+                'jumlahb' => 'required|numeric|min:0',
+                
+            ]);
+            $total = $request->jumlaha + $request->jumlahb;
+            $rincian = rincian_sekolah::find($request->id);
+            $rincian->jumlah_penerima_a = $request->jumlaha;
+            $rincian->jumlah_penerima_b = $request->jumlahb;
+            $rincian->jumlah_penerima_total = $total;
+            $rincian->save();
+
+            return response()->json(['message' => 'Jumlah Sekolah berhasil diperbarui!']);
+        }
+        
+        
+
+        public function updateRincianSekolah($idmenu) {
+                $sekolah = rincian_sekolah::where('id_menu_harian',$idmenu)->get();
+                $menu = Menu::findOrFail($idmenu);
+                $bulan_pengajuan = date('Ym', strtotime($menu->tanggal_pengajuan)); // Format YYYY-MM untuk filter
+                $datadapur = DataDapur::first();
+                $count = Menu::whereMonth('tanggal_pengajuan', date('m', strtotime($menu->tanggal_pengajuan)))
+                ->whereYear('tanggal_pengajuan', date('Y', strtotime($menu->tanggal_pengajuan)))
+                ->count();
+                $jumlah_a = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_a');
+                if($jumlah_a > 0 )
+                {
+                    $nomor_pengajuan = 'PMH-' . $datadapur->nomor_dapur . '-' . $bulan_pengajuan . '' . str_pad($count, 3, '0', STR_PAD_LEFT).'A';
+                
+                }else{
+                    $nomor_pengajuan = 'PMH-' . $datadapur->nomor_dapur . '-' . $bulan_pengajuan . '' . str_pad($count, 3, '0', STR_PAD_LEFT).'B';
+                
+                }
+                
+                $menu->update([
+                    'nomor_pengajuan' => $nomor_pengajuan,
+                ]);
+                $data_hasil_sekolah = DB::table('rincian_sekolah')
+                ->selectRaw('
+                    SUM(jumlah_penerima_total) AS total_penerima, 
+                    SUM(jumlah_penerima_a) AS total_penerima_a, 
+                    SUM(jumlah_penerima_b) AS total_penerima_b
+                ')
+                ->where('id_menu_harian', $idmenu)
+                ->first(); // Mengambil satu baris hasil query
+
+                // input histori menu a
+                $cek_histori_a =  DB::table('tb_histori_menu')->where('id_menu', $idmenu)
+                                  ->where('kode','A')->count();
+                if($cek_histori_a < 1 )
+                {
+                    DB::table('tb_histori_menu')->insert([
+                        'id_menu' => $idmenu,
+                        'kode' => 'A',
+                        'total_porsi' => $data_hasil_sekolah->total_penerima_a,
+                    ]);
+                }
+
+                // input histori menu b
+                $cek_histori_b =  DB::table('tb_histori_menu')->where('id_menu', $idmenu)
+                    ->where('kode', 'B')->count();
+                if ($cek_histori_a < 1) {
+                    DB::table('tb_histori_menu')->insert([
+                        'id_menu' => $idmenu,
+                        'kode' => 'B',
+                        'total_porsi' => $data_hasil_sekolah->total_penerima_b,
+                    ]);
+                }
+
+                
+
+
+            return redirect('/rincian_bahan/' . $idmenu)->with('success', 'Data Berhasil dimasukkan!');
+        }
+
+
+        public function rincian_bahan($idmenu)
+        {
+            $header = "Rincian Bahan";
+            $data_menu_harian = Menu::where('id', $idmenu)->first();
+            $dapur = DataDapur::first();
+            $satuan = TbSatuan::all();
+            
+            $jumlah = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_total');
+            $jumlah_a = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_a');
+            $jumlah_b = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_b');
+            
+            $bumbu = TbMasterBahan::join('tb_satuan','tb_master_bahan.satuan_bahan','tb_satuan.id')->where('jenis', '!=', 7)
+            ->select('tb_master_bahan.*','tb_satuan.satuan')->get();
+            
+            $karbohidrat = DB::table('tb_resep as r')
+                //->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+                ->select('r.id', 'r.nama_resep')
+                ->where('id_komponen_sehat', 1)
+                ->groupBy('r.id', 'r.nama_resep')
+                ->get();
+
+            $protein = DB::table('tb_resep as r')
+               // ->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+                ->select('r.id', 'r.nama_resep')
+                ->where('id_komponen_sehat', 2)
+                ->groupBy('r.id', 'r.nama_resep')
+                ->get();
+            $sayur =  DB::table('tb_resep as r')
+                //->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+                ->select('r.id', 'r.nama_resep')
+                ->where('id_komponen_sehat', 3)
+                ->groupBy('r.id', 'r.nama_resep')
+                ->get();
+            $buah =  DB::table('tb_resep as r')
+                //->join('tb_menu_bahan as mb', 'mb.menu_id', '=', 'r.id')
+                ->select('r.id', 'r.nama_resep')
+                ->where('id_komponen_sehat', 4)
+                ->groupBy('r.id', 'r.nama_resep')
+                ->get();
+            $suplemen = DB::table('tb_resep as r')
+                ->select('r.id', 'r.nama_resep')
+                ->where('id_komponen_sehat', 5)
+                ->groupBy('r.id', 'r.nama_resep')
+                ->get();
+
+            // data karbo    
+            $detail_karbo = 0;
+            if($data_menu_harian->status_pengajuan == 'pending')    
+            {
+                $table_karbo = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga'
+                )
+                ->where('tb_rincian_menu_temp.id_menu', $idmenu)
+                ->get();
+                $detail_karbo = DB::table('tb_rumus_perhitungan_karbo')->where('id_menu', $idmenu)->first();
+            }else{
+                $table_karbo = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.total_harga'
+                )
+                ->where('rincian_menu_harian.id_menu_harian', $idmenu)
+                ->get();
+                 $detail_karbo = DB::table('tb_rumus_perhitungan_karbo')->where('id_menu', $idmenu)->first();
+            }
+            $golongan = 'A';
+            if ($jumlah_a != 0) {
+                $golongan = 'A';
+            } else {
+                $golongan = 'B';
+            }
+
+            $paketmenu = DB::table('tb_paket_menu')
+                ->leftJoin('tb_resep as karbo', 'tb_paket_menu.resep_karbo', '=', 'karbo.id')
+                ->leftJoin('tb_resep as protein', 'tb_paket_menu.resep_protein', '=', 'protein.id')
+                ->leftJoin('tb_resep as sayur', 'tb_paket_menu.resep_sayur', '=', 'sayur.id')
+                ->leftJoin('tb_resep as buah', 'tb_paket_menu.resep_buah', '=', 'buah.id')
+                ->leftJoin('tb_resep as suplemen', 'tb_paket_menu.resep_suplemen', '=', 'suplemen.id')
+                ->where('tb_paket_menu.paket', $golongan)
+                ->select(
+                    'tb_paket_menu.id',
+                    'karbo.nama_resep as nama_karbo',
+                    'protein.nama_resep as nama_protein',
+                    'sayur.nama_resep as nama_sayur',
+                    'buah.nama_resep as nama_buah',
+                    'suplemen.nama_resep as nama_suplemen'
+                )
+                ->get();
+            
+            // data sayur
+            $sayur_1 = 0;
+            $sayur_2 = 0;
+            $sayur_3 = 0;
+            $sayur_4 = 0;
+            $rumus_sayur = DB::table('tb_rumus_perhitungan_sayur')
+            ->where('id_menu', $idmenu)
+            ->orderBy('id', 'desc')
+            ->first();
+            
+            $rumus_sayur_semua = DB::table('tb_rumus_perhitungan_sayur')->get();            
+            if(!$rumus_sayur )
+            {
+
+            } else if ($rumus_sayur->status = 1 ){
+
+
+            // Ambil bahan dengan status_bahan_baku = 1 (misal: sayur porsi A)
+            $sayur_1 = DB::table('tb_menu_bahan')
+                
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id','=', 'tb_box_bahan_baku.id_bahan')
+                ->select('tb_master_bahan.bahan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->sayur)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 1)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 2 (misal: sayur porsi B)
+            $sayur_2 = DB::table('tb_menu_bahan')
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->select('tb_master_bahan.bahan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->sayur)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 2)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 4 (misal: sayur porsi C)
+            $sayur_3 = DB::table('tb_menu_bahan')
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->select('tb_master_bahan.bahan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->sayur)
+               // ->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 4)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 5 (misal: sayur porsi D)
+            $sayur_4 = DB::table('tb_menu_bahan')
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->select('tb_master_bahan.bahan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->sayur)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 5)
+                ->first() ?? 0;
+
+            }
+            $rumus_sayur = DB::table('tb_rumus_perhitungan_sayur')
+            ->where('id_menu', $idmenu)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            // data Protein
+            $protein_1 = 0;
+            $protein_2 = 0;
+            $protein_3 = 0;
+            $protein_4 = 0;
+            $rumus_protein = DB::table('tb_rumus_perhitungan_protein')
+            ->where('id_menu', $idmenu)
+            ->orderBy('id', 'desc')
+            ->first();
+            
+            $protein_sayur_semua = DB::table('tb_rumus_perhitungan_sayur')->where('id_menu', $idmenu)->get();            
+            if(!$rumus_protein )
+            {
+
+            } else if ($rumus_protein->status = 1 ){
+
+
+            // Ambil bahan dengan status_bahan_baku = 1 (misal: sayur porsi A)
+            $protein_1 = DB::table('tb_menu_bahan')
+                
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id','=', 'tb_box_bahan_baku.id_bahan')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select('tb_master_bahan.bahan', 'tb_satuan.satuan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->protein)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 1)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 2 (misal: sayur porsi B)
+            $protein_2 =  DB::table('tb_menu_bahan')
+
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select('tb_master_bahan.bahan', 'tb_satuan.satuan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->protein)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 2)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 4 (misal: sayur porsi C)
+            $protein_3 =  DB::table('tb_menu_bahan')
+
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select('tb_master_bahan.bahan', 'tb_satuan.satuan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->protein)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 4)
+                ->first() ?? 0;
+
+            // Ambil bahan dengan status_bahan_baku = 5 (misal: sayur porsi D)
+            $protein_4 =  DB::table('tb_menu_bahan')
+
+                ->join('tb_master_bahan', 'tb_menu_bahan.bahan_id', '=', 'tb_master_bahan.id')
+                ->join('tb_box_bahan_baku', 'tb_master_bahan.id', '=', 'tb_box_bahan_baku.id_bahan')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select('tb_master_bahan.bahan', 'tb_satuan.satuan', 'tb_menu_bahan.status_bahan_baku', 'tb_box_bahan_baku.penyusutan', 'tb_master_bahan.id')
+                ->where('tb_menu_bahan.menu_id', $data_menu_harian->protein)
+                //->where('id_menu', $idmenu)
+                ->where('tb_menu_bahan.status_bahan_baku', 5)
+                ->first() ?? 0;
+        }
+            $rumus_protein = DB::table('tb_rumus_perhitungan_protein')
+            ->where('id_menu', $idmenu)
+                ->orderBy('id', 'desc')
+                ->first();
+
+            if (request()->ajax()) {
+                //$users = User::query();
+                $rincian_menu_harian = rincian_menu_harian::where('id_menu_harian', $idmenu)
+                //->select('id','id_resep', 'id_bahan', 'jumlah','bumbu')
+                ->get();
+
+                //$Menu = Menu::all();
+                return DataTables::of($rincian_menu_harian)
+                    ->addIndexColumn() // Menambah index
+                    ->addColumn('resep', function ($row) {
+                        if($row->bumbu == 1 )
+                        {
+                            return 'Tambahan';
+                        }else{
+                            $resep = Resep::where('id', $row->id_resep)->first();
+                            return $resep->nama_resep;
+                        }
+                        
+                    })
+                    ->addColumn('bahan', function ($row) {
+                        $bahan = TbMasterBahan::where('id', $row->id_bahan)->first();
+                        return $bahan ? $bahan->bahan : '-'; // Jika null, tampilkan '-'
+                    })
+                    ->addColumn('satuan', function ($row) {
+                    $bahan = TbMasterBahan::where('id', $row->id_bahan)->first();
+                    if ($bahan) {
+                        $satuan = TbSatuan::where('id', $row->id_satuan)->first();
+                        //return $satuan ? $satuan->satuan : '-'; // Jika null, tampilkan '-'
+                        return $satuan->satuan; // Jika null, tampilkan '-'
+                    }
+                    return '-';
+                    })
+                    ->addColumn('jumlah_bahan', function ($row) {
+                       // return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button> ';
+                        return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                   
+                        //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+                    })
+                    ->addColumn('action', function ($row) {
+                        // return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button> ';
+                         return '<a href="' . route('Hapus_bahan_rincian', $row['id']) . '" class="edit btn btn-danger btn-sm delete-button" id="btn-delete-post " data-id="' . $row['id'] . '" onclick="return confirm("Yakin hapus?")" >Delete</a>';
+                         //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+                     })
+                ->rawColumns(['resep', 'bahan','satuan','jumlah_bahan', 'action'])
+                    ->make(true);
+            }
+
+            $extimasi_biaya = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->sum('total_harga') ?? 0;
+            $extimasi_biaya_karbo = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->where('id_resep',$data_menu_harian->karbohidrat)->sum('total_harga') ?? 0;
+            $extimasi_biaya_lauk = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->where('id_resep', $data_menu_harian->protein)->sum('total_harga') ?? 0;
+            $extimasi_biaya_sayur = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->where('id_resep', $data_menu_harian->sayur)->sum('total_harga') ?? 0;
+            $extimasi_biaya_buah = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->where('id_resep', $data_menu_harian->buah)->sum('total_harga') ?? 0;
+            $extimasi_biaya_suplemen = DB::table('tb_rincian_menu_temp')->where('id_menu', $idmenu)->where('id_resep', $data_menu_harian->susu)->sum('total_harga') ?? 0;
+            $nama_karbo = Resep::find($data_menu_harian->karbohidrat)??'-';
+            $nama_lauk = Resep::find($data_menu_harian->protein) ?? '-';
+            $nama_sayur = Resep::find($data_menu_harian->sayur) ?? '-';
+            $nama_buah = Resep::find($data_menu_harian->buah) ?? '-';
+            $nama_suplemen = Resep::find($data_menu_harian->susu) ?? '-';
+            $budget_harga = $jumlah_a * 8000 + $jumlah_b*10000;
+            return view('office/mastermenu.index_rincian_menu_rev', compact(
+                'header',
+                'budget_harga',
+                'satuan',
+                'extimasi_biaya',
+                'nama_karbo',
+                'nama_lauk',
+                'nama_sayur',
+                'nama_buah',
+                'nama_suplemen',
+                'extimasi_biaya_karbo',
+                'extimasi_biaya_lauk',
+                'extimasi_biaya_sayur',
+                'extimasi_biaya_buah',
+                'extimasi_biaya_suplemen',
+                'bumbu',
+                'data_menu_harian', 
+                'dapur', 
+                'jumlah', 
+                'idmenu',
+                'karbohidrat',
+                'protein',
+                'sayur',
+                'buah',
+                'suplemen',
+                'paketmenu',
+                'detail_karbo',
+                'sayur_1','sayur_2','sayur_3','sayur_4',
+                'rumus_sayur','rumus_sayur_semua',
+                'protein_1','protein_2','protein_3','protein_4',
+                'rumus_protein','protein_sayur_semua',
+            ));
+        }
+
+        public function template()
+        {
+            return view('office/mastermenu.template_pengajuan_menu');
+        }
+
+        public function pdf_pengajuan_menu($idmenu)
+        {
+            $data_menu_harian = Menu::where('id', $idmenu)->first();
+            $dapur = DataDapur::first();
+            // Render file template.blade.php tanpa data
+            //$pdf = Pdf::loadView('office/mastermenu.template_pengajuan_menu');
+            $rincian_menu_harian = rincian_menu_harian::where('id_menu_harian', $idmenu)->get();
+            $gramasi_menu = TbGramasiMenu::where('id_menu', $idmenu)->first(); 
+            if(!$gramasi_menu)
+            {
+            $gramasi_menu = 0;
+            }
+            $data_sekolah = DB::select("
+            SELECT 
+                @rownum := @rownum + 1 AS nomor_urut,
+                sekolah.nama_sekolah,
+                r.jumlah_penerima_a,
+                r.jumlah_penerima_b,
+                r.jumlah_penerima_total
+            FROM rincian_sekolah r
+            JOIN tb_data_sekolah sekolah ON r.id_sekolah = sekolah.id
+            CROSS JOIN (SELECT @rownum := 0) AS init
+            WHERE r.id_menu_harian = ?
+              AND r.jumlah_penerima_total > 0
+            ", [$idmenu]);
+            $total_a = DB::table('rincian_sekolah as r')
+            ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'sekolah.nama_sekolah',
+                'r.jumlah_penerima_a',
+                'r.jumlah_penerima_b',
+                'r.jumlah_penerima_total'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->where('r.id_menu_harian', $idmenu)
+            ->whereNotNull('r.jumlah_penerima_total')
+            ->sum('r.jumlah_penerima_a');
+            $total_b = DB::table('rincian_sekolah as r')
+            ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'sekolah.nama_sekolah',
+                'r.jumlah_penerima_a',
+                'r.jumlah_penerima_b',
+                'r.jumlah_penerima_total'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->where('r.id_menu_harian', $idmenu)
+            ->whereNotNull('r.jumlah_penerima_total')
+            ->sum('r.jumlah_penerima_b');
+
+            $tanggal_pengajuan = Carbon::parse($data_menu_harian->tanggal_pengajuan)->format('d-m-Y');
+            $tanggal_kirim = Carbon::parse($data_menu_harian->tanggal_kirim)->format('d-m-Y');
+            $bahan = TbMasterBahan::all();
+            $totalPorsi = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_total');
+            $karbohidrat = Resep::where('id',$data_menu_harian->karbohidrat)->first(); 
+            $protein = Resep::where('id',$data_menu_harian->protein)->first();
+            $sayur = Resep::where('id',$data_menu_harian->sayur)->first();
+            $buah = Resep::where('id',$data_menu_harian->buah)->first();
+            $susu = Resep::where('id',$data_menu_harian->susu)->first();
+            $rumus_karbo = DB::table('tb_rumus_perhitungan_karbo')->where('id_menu', $idmenu)->first();
+            $rumus_protein = DB::table('tb_rumus_perhitungan_protein')->where('id_menu', $idmenu)->first();
+            $rumus_sayur = DB::table('tb_rumus_perhitungan_sayur')->where('id_menu', $idmenu)->first();
+            $rumus_buah = DB::table('tb_rumus_perhitungan_buah')->where('id_menu', $idmenu)->first();
+            $rumus_suplemen = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $idmenu)->first();
+            $rincian_karbohidrat = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan','=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->karbohidrat)
+            ->select(
+            DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            $rincian_protein = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->protein)
+            ->select(
+            DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            $rincian_sayur = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->sayur)
+            ->select(
+            DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            $rincian_buah = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->buah)
+            ->select(
+            DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            $rincian_susu = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->susu)
+            ->select(
+            DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            $rincian_tambahan = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            //->join('tb_satuan as ts', 'mb.satuan_bahan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+
+            ->where('rmb.bumbu', 1)
+            ->whereIn('mb.jenis', [6,7])
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                DB::raw('"-" as jumlah_menu_bahan'),
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            // Unduh sebagai PDF dengan nama file "Formulir_Pengajuan_Menu_Harian.pdf"
+            // Kirim data ke view PDF
+            $pdf = Pdf::loadView('office/mastermenu.template_pengajuan_menu_3', compact(
+                'data_menu_harian',
+                'karbohidrat',
+                'protein',
+                'sayur',
+                'buah',
+                'susu',
+                'rincian_tambahan',
+                'rincian_karbohidrat',
+                'rincian_protein',
+                'rincian_sayur',
+                'rincian_buah',
+                'rincian_susu',
+                'tanggal_pengajuan',
+                'tanggal_kirim',
+                'rincian_menu_harian',
+                'dapur',
+                'totalPorsi',
+                'rumus_karbo',
+                'rumus_protein',
+                'rumus_sayur',
+                'rumus_buah',
+                'rumus_suplemen',
+                'bahan',
+                'data_sekolah',
+                'total_b',
+                'total_a',
+                'gramasi_menu'
+            ));
+            return $pdf->download('Formulir_Pengajuan_Menu_Harian '.  $tanggal_kirim.'.pdf');
+        }
+
+    public function pdf_pengajuan_menu_3($idmenu)
+    {
+        $data_menu_harian = Menu::where('id', $idmenu)->first();
+        $dapur = DataDapur::first();
+        // Render file template.blade.php tanpa data
+        //$pdf = Pdf::loadView('office/mastermenu.template_pengajuan_menu');
+        $rincian_menu_harian = rincian_menu_harian::where('id_menu_harian', $idmenu)->get();
+        $gramasi_menu = TbGramasiMenu::where('id_menu', $idmenu)->first();
+        if (!$gramasi_menu) {
+            $gramasi_menu = 0;
+        }
+        $data_sekolah = DB::select("
+            SELECT 
+                @rownum := @rownum + 1 AS nomor_urut,
+                sekolah.nama_sekolah,
+                r.jumlah_penerima_a,
+                r.jumlah_penerima_b,
+                r.jumlah_penerima_total
+            FROM rincian_sekolah r
+            JOIN tb_data_sekolah sekolah ON r.id_sekolah = sekolah.id
+            CROSS JOIN (SELECT @rownum := 0) AS init
+            WHERE r.id_menu_harian = ?
+              AND r.jumlah_penerima_total > 0
+            ", [$idmenu]);
+        $total_a = DB::table('rincian_sekolah as r')
+            ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'sekolah.nama_sekolah',
+                'r.jumlah_penerima_a',
+                'r.jumlah_penerima_b',
+                'r.jumlah_penerima_total'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->where('r.id_menu_harian', $idmenu)
+            ->whereNotNull('r.jumlah_penerima_total')
+            ->sum('r.jumlah_penerima_a');
+        $total_b = DB::table('rincian_sekolah as r')
+            ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'sekolah.nama_sekolah',
+                'r.jumlah_penerima_a',
+                'r.jumlah_penerima_b',
+                'r.jumlah_penerima_total'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->where('r.id_menu_harian', $idmenu)
+            ->whereNotNull('r.jumlah_penerima_total')
+            ->sum('r.jumlah_penerima_b');
+
+        $tanggal_pengajuan = Carbon::parse($data_menu_harian->tanggal_pengajuan)->format('d-m-Y');
+        $tanggal_kirim = Carbon::parse($data_menu_harian->tanggal_kirim)->format('d-m-Y');
+        $bahan = TbMasterBahan::all();
+        $totalPorsi = rincian_sekolah::where('id_menu_harian', $idmenu)->sum('jumlah_penerima_total');
+        $karbohidrat = Resep::where('id',$data_menu_harian->karbohidrat)->first();
+        $protein = Resep::where('id',$data_menu_harian->protein)->first();
+        $sayur = Resep::where('id',$data_menu_harian->sayur)->first();
+        $buah = Resep::where('id',$data_menu_harian->buah)->first();
+        $susu = Resep::where('id',$data_menu_harian->susu)->first();
+        $rumus_karbo = DB::table('tb_rumus_perhitungan_karbo')->where('id_menu', $idmenu)->first();
+        $rumus_protein = DB::table('tb_rumus_perhitungan_protein')->where('id_menu', $idmenu)->first();
+        $rumus_sayur = DB::table('tb_rumus_perhitungan_sayur')->where('id_menu', $idmenu)->first();
+        $rumus_buah = DB::table('tb_rumus_perhitungan_buah')->where('id_menu', $idmenu)->first();
+        $rumus_suplemen = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $idmenu)->first();
+        $rincian_karbohidrat = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->karbohidrat)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $rincian_protein = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->protein)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $rincian_sayur = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->sayur)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $rincian_buah = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->buah)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $rincian_susu = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_menu_bahan as mbh', function ($join) {
+                $join->on('rmb.id_resep', '=', 'mbh.menu_id')
+                    ->on('rmb.id_bahan', '=', 'mbh.bahan_id');
+            })
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+            ->where('rmb.id_resep', $data_menu_harian->susu)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                'mbh.jumlah as jumlah_menu_bahan',
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $rincian_tambahan = DB::table('rincian_menu_harian as rmb')
+            ->join('tb_master_bahan as mb', 'rmb.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as ts', 'rmb.id_satuan', '=', 'ts.id')
+            //->join('tb_satuan as ts', 'mb.satuan_bahan', '=', 'ts.id')
+            ->where('rmb.id_menu_harian', $idmenu)
+
+            ->where('rmb.bumbu', 1)
+            ->whereIn('mb.jenis', [6,7])
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'mb.bahan',
+                DB::raw('"-" as jumlah_menu_bahan'),
+                'rmb.jumlah as jumlah_rincian_menu_harian',
+                'ts.satuan',
+                'rmb.keterangan',
+                'rmb.jumlah_box'
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+            // Unduh sebagai PDF dengan nama file "Formulir_Pengajuan_Menu_Harian.pdf"
+            // Kirim data ke view PDF
+            $pdf = Pdf::loadView('office/mastermenu.template_pengajuan_menu_2', compact(
+                'data_menu_harian',
+                'karbohidrat',
+                'protein',
+                'sayur',
+                'buah',
+                'susu',
+                'rincian_tambahan',
+                'rincian_karbohidrat',
+                'rincian_protein',
+                'rincian_sayur',
+                'rincian_buah',
+                'rincian_susu',
+                'tanggal_pengajuan',
+                'tanggal_kirim',
+                'rincian_menu_harian',
+                'dapur',
+                'totalPorsi',
+                'rumus_karbo',
+                'rumus_protein',
+                'rumus_sayur',
+                'rumus_buah',
+                'rumus_suplemen',
+                'bahan',
+                'data_sekolah',
+                'total_b',
+                'total_a',
+                'gramasi_menu',
+                'data_bumbu',
+                'data_beras',
+                'data_lauk',
+                'data_sayur',
+                'data_buah',
+                'data_suplemen'
+            ));
+            return $pdf->download('Formulir_Pengajuan_Menu_Harian ' .  $tanggal_kirim . '.pdf');
+    }
+
+     public function tambahan_rincian_menu_harian(Request $request)
+     {
+        $request->validate([
+            'bahan_id' => 'required',
+            'id_resep' => 'required',
+            'id_satuan' => 'required',
+            'jumlah_box' => 'required',
+            'harga' => 'required',
+            'jumlah' => 'required',
+        ]);
+        $spesifikasi_bahan = SpesifikasiBahan::where('id_bahan', $request->bahan_id)->first();
+        $keterangan = '-';
+        if($spesifikasi_bahan)
+        {
+            $keterangan = $spesifikasi_bahan->spesifikasi;
+        }
+        $kontrak = TbRincianKontrak::where('id_bahan', $request->bahan_id)->where('status',1)->first();
+        rincian_menu_harian::create([
+            'id_menu_harian'    => $request->id_menu, // Gantilah sesuai kebutuhan
+            'id_resep'          => $request->id_resep,
+            'id_bahan'          => $request->bahan_id,
+            'jumlah'            => $request->jumlah,
+            'bumbu'             => 0,
+            'harga'             => $request->harga,
+            'total_harga'       => 1,
+            'jumlah_box'        => $request->jumlah_box,
+            'keterangan'        => $keterangan,
+            'id_kontrak'        => $kontrak->id,
+            'id_satuan'        => $request->id_satuan,
+
+
+        ]);
+        $cek_detail_resep = MenuBahan::where('menu_id', $request->id_resep)->where('bahan_id', $request->bahan_id)->first();
+        if(!$cek_detail_resep)
+        {
+            MenuBahan::create([
+                'menu_id' => $request->id_resep,
+                'bahan_id' => $request->bahan_id,
+                'jumlah' => $request->jumlah,
+                'id_satuan' => $request->id_satuan,
+                'status_bahan_baku' => 3,
+                
+            ]);
+        }
+        $satuan = TbMasterBahan::where('id', $request->bahan_id)->first();
+        TbBantuBahanPo::create([
+            'id_menu_harian'    => $request->id_menu,
+            'id_resep'          => $request->id_resep,
+            'id_bahan'          => $request->bahan_id,
+            'jumlah'            => $request->jumlah ,
+            'bumbu'             => 0,
+            'satuan'            => $satuan->satuan_bahan,
+            'jumlah_bahan'      => $request->jumlah ,
+
+        ]);
+        return response()->json(['success' => true, 'message' => 'Data berhasil ditambahkan']);
+
+     }
+
+     public function update_jumlah_rincian_bahan(Request $request)
+     {
+
+        $request->validate([
+            'id' => 'required',
+            'jumlah' => 'required',
+
+        ]);
+
+        $rincian = rincian_menu_harian::find($request->id);
+        $rincian->jumlah = $request->jumlah;
+        $rincian->save();
+        $TbBantuBahanPo = TbBantuBahanPo::find($request->id);
+        $TbBantuBahanPo->jumlah = $request->jumlah;
+        $TbBantuBahanPo->jumlah_bahan = $request->jumlah;
+        $TbBantuBahanPo->save();
+
+
+        return response()->json(['message' => 'Jumlah Sekolah berhasil diperbarui!']);
+        //return response()->json(['message' => 'Jumlah data berhasil diperbarui']);
+    
+     }
+
+
+    public function cancel($id)
+    {
+        $menu = Menu::findOrFail($id);
+        return response()->json($menu);
+    }
+    public function cancelConfirm(Request $request, $id)
+    {
+        $menu = Menu::findOrFail($id);
+        $menu->status_pengajuan = 'rejected';
+        $menu->save();
+
+        return response()->json([
+            'success' => true,
+            'redirect' => route('mastermenu.create')
+        ]);
+    }
+
+    public function acc($id, Request $request)
+    {
+        $request->validate([
+            'nama_acc' => 'required|string|max:255',
+            'tanggal_acc' => 'required|date',
+        ]);
+
+        try {
+            $menu = Menu::findOrFail($id);
+            $menu->status_pengajuan = 'approved';
+            $menu->nama_acc = $request->nama_acc;
+            $menu->tanggal_acc = $request->tanggal_acc;
+            $menu->save();
+
+            return response()->json(['success' => true, 'message' => 'Menu berhasil di-ACC.']);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => 'Gagal menyimpan ACC.', 'error' => $e->getMessage()], 500);
+        }
+    }
+    
+    public function hapus_bahan_rincian($id)
+    {
+        $data = rincian_menu_harian::find($id);
+        rincian_menu_harian::find($id)->delete();
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $data->id_menu_harian])
+            ->with('success', 'Suplemen berhasil dihapus.');
+    }
+
+    public function dt_rekap_sekolah($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        if ($data->status_pengajuan == 'pending') {
+            $table =  DB::table('rincian_sekolah as r')
+                ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+                ->select(
+                    DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                    'sekolah.nama_sekolah',
+                    'sekolah.jenjang_sekolah',
+                    'r.id as id_rincian',
+                    'r.jumlah_penerima_a',
+                    'r.jumlah_penerima_b',
+                    'r.jumlah_penerima_total'
+                )
+                ->crossJoin(DB::raw('(SELECT @rownum := 0) AS init')) // Untuk nomor urut
+                ->where('r.id_menu_harian', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('rincian_sekolah as r')
+                ->join('tb_data_sekolah as sekolah', 'r.id_sekolah', '=', 'sekolah.id')
+                ->select(
+                    DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                    'sekolah.nama_sekolah',
+                    'sekolah.jenjang_sekolah',
+                    'r.id AS id_rincian',
+                    'r.jumlah_penerima_a',
+                    'r.jumlah_penerima_b',
+                    'r.jumlah_penerima_total'
+                )
+                ->crossJoin(DB::raw('(SELECT @rownum := 0) AS init')) // Untuk nomor urut
+                ->where('r.id_menu_harian', $id_menu)
+                ->get();
+        }
+
+
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+            ->addColumn('input_sekolah_a', function ($row) {
+                return '<input type="number" class="form-control jumlah_a" data-id="' . $row->id_rincian . '" value="' . $row->jumlah_penerima_a . '"> <button class="btn btn-success btn-sm update-jumlah-sekolaha" data-id="' . $row->id_rincian . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_sekolah_b', function ($row) {
+                return '<input type="number" class="form-control jumlah_b" data-id="' . $row->id_rincian . '" value="' . $row->jumlah_penerima_b . '"> <button class="btn btn-success btn-sm update-jumlah-sekolahb" data-id="' . $row->id_rincian . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['input_sekolah_a', 'input_sekolah_b'])
+            ->make(true);
+    }
+
+
+    public function Lap_rekap_menu_export(Request $request)
+    {
+        //$start = date('Y-m-d', strtotime($request->tanggal_mulai));
+        $start = $request->tanggal_awal;
+        $end   = $request->tanggal_akhir;
+        $menu1 = DB::table('tb_menu as m')
+                ->where('m.tanggal_kirim', $start)
+                ->whereTime('m.jam_pelayanan', '06:00:00')
+                ->orderBy('m.id', 'asc')
+                ->first();
+
+        $menu2 = DB::table('tb_menu as m')
+                ->where('m.tanggal_kirim', $start)
+                ->whereTime('m.jam_pelayanan', '09:00:00')
+                ->orderBy('m.id', 'asc')
+                ->first();
+        $menu3 = DB::table('tb_menu as m')
+                ->where('m.tanggal_kirim', $start)
+                ->whereTime('m.jam_pelayanan', '12:00:00')
+                ->orderBy('m.id', 'asc')
+                ->first();
+        $menu4 = DB::table('tb_menu as m')
+                ->where('m.tanggal_kirim', $start)
+                ->whereTime('m.jam_pelayanan', '15:00:00')
+                ->orderBy('m.id', 'asc')
+                ->first();
+        $menu5 = DB::table('tb_menu as m')
+                ->where('m.tanggal_kirim', $start)
+                ->whereTime('m.jam_pelayanan', '18:00:00')
+                ->orderBy('m.id', 'asc')
+                ->first();
+                $cek_pelayanan_1 = '06:00:00';
+                $cek_pelayanan_2 = '09:00:00';
+                $cek_pelayanan_3 = '12:00:00';
+                $cek_pelayanan_4 = '15:00:00';
+                $cek_pelayanan_5 = '18:00:00';
+
+        $pelayanan_1 = DB::table('tb_menu as m')
+                        ->where('m.tanggal_kirim', $start)
+                        ->whereTime('m.jam_pelayanan', $cek_pelayanan_1)
+                        ->count();
+        $pelayanan_2 = DB::table('tb_menu as m')
+                        ->where('m.tanggal_kirim', $start)
+                        ->whereTime('m.jam_pelayanan', $cek_pelayanan_2)
+                        ->count();
+        $pelayanan_3 = DB::table('tb_menu as m')
+                        ->where('m.tanggal_kirim', $start)
+                        ->whereTime('m.jam_pelayanan', $cek_pelayanan_3)
+                        ->count();
+        $pelayanan_4 = DB::table('tb_menu as m')
+                        ->where('m.tanggal_kirim', $start)
+                        ->whereTime('m.jam_pelayanan', $cek_pelayanan_4)
+                        ->count();
+        $pelayanan_5 = DB::table('tb_menu as m')
+                        ->where('m.tanggal_kirim', $start)
+                        ->whereTime('m.jam_pelayanan', $cek_pelayanan_5)
+                        ->count();  
+                        
+        $jumlah_a = DB::table('tb_menu as m')
+            ->leftJoin('rincian_sekolah as r', 'r.id_menu_harian', '=', 'm.id')
+            ->where('m.tanggal_kirim', $start)
+            ->select(
+                'm.id as id_menu',
+                'm.tanggal_kirim',
+                DB::raw('SUM(r.jumlah_penerima_a) as total_penerima_a'),
+                DB::raw('SUM(r.jumlah_penerima_b) as total_penerima_b'),
+            )
+            ->groupBy('m.id', 'm.tanggal_kirim')
+            ->orderBy('m.id', 'asc')
+            ->first();
+        $jumlah_b = DB::table('tb_menu as m')
+            ->leftJoin('rincian_sekolah as r', 'r.id_menu_harian', '=', 'm.id')
+            ->where('m.tanggal_kirim', $start)
+            ->select(
+                'm.id as id_menu',
+                'm.tanggal_kirim',
+                DB::raw('SUM(r.jumlah_penerima_a) as total_penerima_a'),
+                DB::raw('SUM(r.jumlah_penerima_b) as total_penerima_b')
+            
+            )
+            ->groupBy('m.id', 'm.tanggal_kirim')
+            ->orderBy('m.id', 'desc')
+            ->first();
+        # beras pertama 
+        // Null check for menu1
+        if (!$menu1) {
+            $karbohidrat_1 = 0;
+            $bahan_karbo_1 = 0;
+            $gramasi_1 = 0;
+            $lauk_1 = 0;
+            $bahan_lauk_1 = 0;
+            $gramasi_lauk_1 = 0;
+            $sayur_1 = 0;
+            $bahan_ids = [];
+            $bahan_sayur_1 = 0;
+            $gramasi_sayur_1 = 0;
+            $buah_1 = 0;
+            $bahan_buah_1 = 0;
+            $gramasi_buah_1 = 0;
+            $suplemen_1 = 0;
+            $bahan_suplemen_1 = 0;
+            $gramasi_suplemen_1 = 0;
+            $bumbu_1 = 0;
+        } else {
+            $karbohidrat_1 = MenuBahan::where('menu_id', $menu1->karbohidrat)->where('status_bahan_baku', 1)->first();
+            $bahan_karbo_1 = rincian_menu_harian::where('id_menu_harian', $menu1->id)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('id_resep', $karbohidrat_1->menu_id)
+                ->where('id_bahan', $karbohidrat_1->bahan_id)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*','tb_satuan.satuan','tb_resep.nama_resep')
+                ->first();
+            $gramasi_1 = TbRumusPerhitunganKarbo::where('id_menu', $menu1->id)->first();
+
+            $lauk_1 = MenuBahan::where('menu_id', $menu1->protein)->where('status_bahan_baku', 1)->first();
+            $bahan_lauk_1 = rincian_menu_harian::where('id_menu_harian', $menu1->id)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('id_resep', $lauk_1->menu_id)
+                ->where('id_bahan', $lauk_1->bahan_id)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+                ->first();
+            $gramasi_lauk_1 = RumusPerhitunganProtein::where('id_menu', $menu1->id)->first();
+
+            $sayur_1 = MenuBahan::where('menu_id', $menu1->sayur)
+                ->where('status_bahan_baku', '!=', 3)
+                ->select('menu_id', 'bahan_id')
+                ->get();
+            $bahan_ids = $sayur_1->pluck('bahan_id');
+            $sayur_1 = MenuBahan::where('menu_id',  $menu1->sayur)
+                ->where('status_bahan_baku', '!=', 3)
+                ->select('menu_id', 'bahan_id')
+                ->first();
+            $bahan_sayur_1 = rincian_menu_harian::where('id_menu_harian', $menu1->id)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('id_resep',  $menu1->sayur)
+                ->whereIn('id_bahan', $bahan_ids)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+                ->get();
+            $gramasi_sayur_1 = RumusPerhitunganSayur::where('id_menu', $menu1->id)->first();
+
+            $buah_1 = MenuBahan::where('menu_id', $menu1->buah)->where('status_bahan_baku', 1)->first();
+            $bahan_buah_1 = rincian_menu_harian::where('id_menu_harian', $menu1->id ?? 0)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('id_resep', $buah_1->menu_id ?? 0)
+                ->where('id_bahan', $buah_1->bahan_id ?? 0)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+                ->first();
+            $gramasi_buah_1 = BuahRumusPerhitunganBuah::where('id_menu', $menu1->id)->first();
+
+            $suplemen_1 = MenuBahan::where('menu_id', $menu1->susu ?? 0)->where('status_bahan_baku', 1)->first();
+            $bahan_suplemen_1 = rincian_menu_harian::where('id_menu_harian', $menu1->id)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('rincian_menu_harian.id_resep', $suplemen_1->menu_id  ?? 0)
+                ->where('rincian_menu_harian.id_bahan', $suplemen_1->bahan_id  ?? 0)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+                ->first();
+            $gramasi_suplemen_1 = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $menu1->id)->first();
+
+            $bumbu_1 = rincian_menu_harian::where('rincian_menu_harian.id_menu_harian', $menu1->id)
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->whereNotIn('rincian_menu_harian.id_bahan', [$suplemen_1->bahan_id  ?? 0, $lauk_1->bahan_id, $karbohidrat_1->bahan_id, $buah_1->bahan_id])
+                ->whereNotIn('rincian_menu_harian.id_bahan', $bahan_ids)
+                ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+                ->get();
+        }
+        # bahan utama 
+        $karbohidrat_2 = MenuBahan::where('menu_id', $menu2->karbohidrat)->where('status_bahan_baku', 1)->first();
+        $bahan_karbo_2 = rincian_menu_harian::where('id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $karbohidrat_2->menu_id)
+            ->where('id_bahan', $karbohidrat_2->bahan_id)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_2 = TbRumusPerhitunganKarbo::where('id_menu', $menu2->id)->first();
+
+
+        $lauk_2 = MenuBahan::where('menu_id', $menu2->protein)->where('status_bahan_baku', 1)->first();
+        $bahan_lauk_2 = rincian_menu_harian::where('id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $lauk_2->menu_id)
+            ->where('id_bahan', $lauk_2->bahan_id)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+
+        $gramasi_lauk_2 = RumusPerhitunganProtein::where('id_menu', $menu2->id)->first();
+
+        $sayur_2 = MenuBahan::where('menu_id', $menu2->sayur)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->get();
+
+        $bahan_ids = $sayur_2->pluck('bahan_id'); // hasil: [5, 7, 9]
+        $sayur_2 = MenuBahan::where('menu_id',  $menu2->sayur)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->first();
+
+        $bahan_sayur_2 = rincian_menu_harian::where('id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep',  $menu2->sayur)
+            ->whereIn('id_bahan', $bahan_ids)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+        $gramasi_sayur_2 = RumusPerhitunganSayur::where('id_menu', $menu2->id)->first();
+
+        $buah_2 = MenuBahan::where('menu_id', $menu2->buah)->where('status_bahan_baku', 1)->first();
+        $bahan_buah_2 = rincian_menu_harian::where('id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $buah_2->menu_id)
+            ->where('id_bahan', $buah_2->bahan_id)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_buah_2 = BuahRumusPerhitunganBuah::where('id_menu', $menu2->id)->first();
+
+        $suplemen_2 = MenuBahan::where('menu_id', $menu2->susu)->where('status_bahan_baku', 1)->first();
+        $bahan_suplemen_2 = rincian_menu_harian::where('id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $suplemen_2->menu_id ?? 0)
+            ->where('id_bahan', $suplemen_2->bahan_id  ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_suplemen_2 = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $menu2->id)->first();
+
+        $bumbu_2 = rincian_menu_harian::where('rincian_menu_harian.id_menu_harian', $menu2->id)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->whereNotIn('rincian_menu_harian.id_bahan', [$suplemen_2->bahan_id ?? 0, $lauk_2->bahan_id, $karbohidrat_2->bahan_id, $buah_2->bahan_id])
+            ->whereNotIn('rincian_menu_harian.id_bahan', $bahan_ids)
+
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+
+        $bumbu_total = DB::table('rincian_menu_harian')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', '=', 'tb_satuan.id')
+            ->join('tb_menu', 'rincian_menu_harian.id_menu_harian', '=', 'tb_menu.id')
+            ->where('tb_menu.tanggal_kirim', $start)
+            ->select(
+                'rincian_menu_harian.id_bahan',
+                'tb_master_bahan.bahan',
+                'tb_satuan.satuan',
+                DB::raw('SUM(rincian_menu_harian.jumlah) as total_jumlah'),
+            DB::raw('MIN(rincian_menu_harian.keterangan) as keterangan')
+            )
+            ->groupBy(
+                'rincian_menu_harian.id_bahan',
+                'tb_master_bahan.bahan',
+                'tb_satuan.satuan'
+            )
+            ->orderBy('tb_master_bahan.bahan')
+            ->get();
+
+
+        if($jumlah_a->total_penerima_a == 0 )
+        {
+            $jumlah_a = $jumlah_a->total_penerima_a;
+            $jumlah_b = $jumlah_b->total_penerima_b;
+
+        }else{
+            $jumlah_b = $jumlah_b->total_penerima_b;
+
+            $jumlah_a = $jumlah_a->total_penerima_a;
+        }
+        
+
+
+        $start_tanggal = date('d-m-Y', strtotime($request->tanggal_mulai));
+        $end_tanggal = date('d-m-Y', strtotime($request->tanggal_selesai));
+        // Data menu 3
+        $karbohidrat_3 = MenuBahan::where('menu_id', $menu3->karbohidrat ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_karbo_3 = rincian_menu_harian::where('id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $karbohidrat_3->menu_id ?? 0)
+            ->where('id_bahan', $karbohidrat_3->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*','tb_satuan.satuan','tb_resep.nama_resep')
+            ->first();
+        $gramasi_3 = TbRumusPerhitunganKarbo::where('id_menu', $menu3->id ?? 0)->first();
+        $lauk_3 = MenuBahan::where('menu_id', $menu3->protein ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_lauk_3 = rincian_menu_harian::where('id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $lauk_3->menu_id ?? 0)
+            ->where('id_bahan', $lauk_3->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_lauk_3 = RumusPerhitunganProtein::where('id_menu', $menu3->id ?? 0)->first();
+        $sayur_3 = MenuBahan::where('menu_id', $menu3->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->get();
+        $bahan_ids_3 = $sayur_3->pluck('bahan_id');
+        $sayur_3 = MenuBahan::where('menu_id',  $menu3->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->first();
+        $bahan_sayur_3 = rincian_menu_harian::where('id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep',  $menu3->sayur ?? 0)
+            ->whereIn('id_bahan', $bahan_ids_3)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+        $gramasi_sayur_3 = RumusPerhitunganSayur::where('id_menu', $menu3->id ?? 0)->first();
+        $buah_3 = MenuBahan::where('menu_id', $menu3->buah ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_buah_3 = rincian_menu_harian::where('id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $buah_3->menu_id ?? 0)
+            ->where('id_bahan', $buah_3->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_buah_3 = BuahRumusPerhitunganBuah::where('id_menu', $menu3->id ?? 0)->first();
+        $suplemen_3 = MenuBahan::where('menu_id', $menu3->susu ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_suplemen_3 = rincian_menu_harian::where('id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('rincian_menu_harian.id_resep', $suplemen_3->menu_id  ?? 0)
+            ->where('rincian_menu_harian.id_bahan', $suplemen_3->bahan_id  ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_suplemen_3 = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $menu3->id ?? 0)->first();
+        $bumbu_3 = rincian_menu_harian::where('rincian_menu_harian.id_menu_harian', $menu3->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->whereNotIn('rincian_menu_harian.id_bahan', [$suplemen_3->bahan_id  ?? 0, $lauk_3->bahan_id ?? 0, $karbohidrat_3->bahan_id ?? 0, $buah_3->bahan_id ?? 0])
+            ->whereNotIn('rincian_menu_harian.id_bahan', $bahan_ids_3)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+
+        // Data menu 4
+        $karbohidrat_4 = MenuBahan::where('menu_id', $menu4->karbohidrat ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_karbo_4 = rincian_menu_harian::where('id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $karbohidrat_4->menu_id ?? 0)
+            ->where('id_bahan', $karbohidrat_4->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*','tb_satuan.satuan','tb_resep.nama_resep')
+            ->first();
+        $gramasi_4 = TbRumusPerhitunganKarbo::where('id_menu', $menu4->id ?? 0)->first();
+        $lauk_4 = MenuBahan::where('menu_id', $menu4->protein ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_lauk_4 = rincian_menu_harian::where('id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $lauk_4->menu_id ?? 0)
+            ->where('id_bahan', $lauk_4->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_lauk_4 = RumusPerhitunganProtein::where('id_menu', $menu4->id ?? 0)->first();
+        $sayur_4 = MenuBahan::where('menu_id', $menu4->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->get();
+        $bahan_ids_4 = $sayur_4->pluck('bahan_id');
+        $sayur_4 = MenuBahan::where('menu_id',  $menu4->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->first();
+        $bahan_sayur_4 = rincian_menu_harian::where('id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep',  $menu4->sayur ?? 0)
+            ->whereIn('id_bahan', $bahan_ids_4)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+        $gramasi_sayur_4 = RumusPerhitunganSayur::where('id_menu', $menu4->id ?? 0)->first();
+        $buah_4 = MenuBahan::where('menu_id', $menu4->buah ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_buah_4 = rincian_menu_harian::where('id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $buah_4->menu_id ?? 0)
+            ->where('id_bahan', $buah_4->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_buah_4 = BuahRumusPerhitunganBuah::where('id_menu', $menu4->id ?? 0)->first();
+        $suplemen_4 = MenuBahan::where('menu_id', $menu4->susu ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_suplemen_4 = rincian_menu_harian::where('id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('rincian_menu_harian.id_resep', $suplemen_4->menu_id  ?? 0)
+            ->where('rincian_menu_harian.id_bahan', $suplemen_4->bahan_id  ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_suplemen_4 = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $menu4->id ?? 0)->first();
+        $bumbu_4 = rincian_menu_harian::where('rincian_menu_harian.id_menu_harian', $menu4->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->whereNotIn('rincian_menu_harian.id_bahan', [$suplemen_4->bahan_id  ?? 0, $lauk_4->bahan_id ?? 0, $karbohidrat_4->bahan_id ?? 0, $buah_4->bahan_id ?? 0])
+            ->whereNotIn('rincian_menu_harian.id_bahan', $bahan_ids_4)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+
+        // Data menu 5
+        $karbohidrat_5 = MenuBahan::where('menu_id', $menu5->karbohidrat ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_karbo_5 = rincian_menu_harian::where('id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $karbohidrat_5->menu_id ?? 0)
+            ->where('id_bahan', $karbohidrat_5->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*','tb_satuan.satuan','tb_resep.nama_resep')
+            ->first();
+        $gramasi_5 = TbRumusPerhitunganKarbo::where('id_menu', $menu5->id ?? 0)->first();
+        $lauk_5 = MenuBahan::where('menu_id', $menu5->protein ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_lauk_5 = rincian_menu_harian::where('id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $lauk_5->menu_id ?? 0)
+            ->where('id_bahan', $lauk_5->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_lauk_5 = RumusPerhitunganProtein::where('id_menu', $menu5->id ?? 0)->first();
+        $sayur_5 = MenuBahan::where('menu_id', $menu5->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->get();
+        $bahan_ids_5 = $sayur_5->pluck('bahan_id');
+        $sayur_5 = MenuBahan::where('menu_id',  $menu5->sayur ?? 0)
+            ->where('status_bahan_baku', '!=', 3)
+            ->select('menu_id', 'bahan_id')
+            ->first();
+        $bahan_sayur_5 = rincian_menu_harian::where('id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep',  $menu5->sayur ?? 0)
+            ->whereIn('id_bahan', $bahan_ids_5)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+        $gramasi_sayur_5 = RumusPerhitunganSayur::where('id_menu', $menu5->id ?? 0)->first();
+        $buah_5 = MenuBahan::where('menu_id', $menu5->buah ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_buah_5 = rincian_menu_harian::where('id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('id_resep', $buah_5->menu_id ?? 0)
+            ->where('id_bahan', $buah_5->bahan_id ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_buah_5 = BuahRumusPerhitunganBuah::where('id_menu', $menu5->id ?? 0)->first();
+        $suplemen_5 = MenuBahan::where('menu_id', $menu5->susu ?? 0)->where('status_bahan_baku', 1)->first();
+        $bahan_suplemen_5 = rincian_menu_harian::where('id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->where('rincian_menu_harian.id_resep', $suplemen_5->menu_id  ?? 0)
+            ->where('rincian_menu_harian.id_bahan', $suplemen_5->bahan_id  ?? 0)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->first();
+        $gramasi_suplemen_5 = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $menu5->id ?? 0)->first();
+        $bumbu_5 = rincian_menu_harian::where('rincian_menu_harian.id_menu_harian', $menu5->id ?? 0)
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+            ->whereNotIn('rincian_menu_harian.id_bahan', [$suplemen_5->bahan_id  ?? 0, $lauk_5->bahan_id ?? 0, $karbohidrat_5->bahan_id ?? 0, $buah_5->bahan_id ?? 0])
+            ->whereNotIn('rincian_menu_harian.id_bahan', $bahan_ids_5)
+            ->select('tb_master_bahan.bahan', 'rincian_menu_harian.*', 'tb_satuan.satuan', 'tb_resep.nama_resep')
+            ->get();
+
+        return Excel::download(
+            new LaporanRekapMenuExport(
+                $jumlah_a, $start, $end, $jumlah_b, $menu1, $menu2,
+                $karbohidrat_1, $bahan_karbo_1, $gramasi_1,
+                $lauk_1, $bahan_lauk_1, $gramasi_lauk_1,
+                $sayur_1, $bahan_sayur_1, $gramasi_sayur_1,
+                $buah_1, $bahan_buah_1, $gramasi_buah_1,
+                $suplemen_1, $bahan_suplemen_1, $gramasi_suplemen_1, $bumbu_1,
+                $karbohidrat_2, $bahan_karbo_2, $gramasi_2,
+                $lauk_2, $bahan_lauk_2, $gramasi_lauk_2,
+                $sayur_2, $bahan_sayur_2, $gramasi_sayur_2,
+                $buah_2, $bahan_buah_2, $gramasi_buah_2,
+                $suplemen_2, $bahan_suplemen_2, $gramasi_suplemen_2, $bumbu_2,
+                $menu3, $karbohidrat_3, $bahan_karbo_3, $gramasi_3, $lauk_3, $bahan_lauk_3, $gramasi_lauk_3, $sayur_3, $bahan_sayur_3, $gramasi_sayur_3, $buah_3, $bahan_buah_3, $gramasi_buah_3, $suplemen_3, $bahan_suplemen_3, $gramasi_suplemen_3, $bumbu_3,
+                $menu4, $karbohidrat_4, $bahan_karbo_4, $gramasi_4, $lauk_4, $bahan_lauk_4, $gramasi_lauk_4, $sayur_4, $bahan_sayur_4, $gramasi_sayur_4, $buah_4, $bahan_buah_4, $gramasi_buah_4, $suplemen_4, $bahan_suplemen_4, $gramasi_suplemen_4, $bumbu_4,
+                $menu5, $karbohidrat_5, $bahan_karbo_5, $gramasi_5, $lauk_5, $bahan_lauk_5, $gramasi_lauk_5, $sayur_5, $bahan_sayur_5, $gramasi_sayur_5, $buah_5, $bahan_buah_5, $gramasi_buah_5, $suplemen_5, $bahan_suplemen_5, $gramasi_suplemen_5, $bumbu_5,
+                $bumbu_total,
+                $pelayanan_1, $pelayanan_2, $pelayanan_3, $pelayanan_4, $pelayanan_5
+            ),
+            'Rekap_menu' . $start . ' .xlsx'
+        );
+    }
+
+    public function Lap_rekap_menu_export2($idmenu,Request $request)
+    {
+        
+    }
+
+    // Menu Gizi Harian CRUD
+    public function getMenuGizi($idmenu)
+    {
+        $gizi = MenuGiziHarian::where('id_menu', $idmenu)->first();
+        if (!$gizi) {
+            $gizi = (object)[
+                'id' => null,
+                'id_menu' => $idmenu,
+                'energi' => 0,
+                'protein' => 0,
+                'lemak' => 0,
+                'karbohidrat' => 0,
+                'serat' => 0,
+                'natrium' => 0,
+            ];
+        }
+        return response()->json($gizi);
+    }
+
+    public function storeMenuGizi(Request $request)
+    {
+        $validated = $request->validate([
+            'id_menu' => 'required|exists:tb_menu,id',
+            'energi' => 'required|numeric|min:0',
+            'protein' => 'required|numeric|min:0',
+            'lemak' => 'required|numeric|min:0',
+            'karbohidrat' => 'required|numeric|min:0',
+            'serat' => 'required|numeric|min:0',
+            'natrium' => 'required|numeric|min:0',
+        ]);
+
+        // Check if gizi data already exists for this menu
+        $existingGizi = MenuGiziHarian::where('id_menu', $validated['id_menu'])->first();
+        
+        if ($existingGizi) {
+            // Update existing
+            $existingGizi->update($validated);
+            return response()->json(['success' => true, 'message' => 'Data nutrisi berhasil diperbarui']);
+        } else {
+            // Create new
+            MenuGiziHarian::create($validated);
+            return response()->json(['success' => true, 'message' => 'Data nutrisi berhasil ditambahkan']);
+        }
+    }
+
+    public function updateMenuGizi(Request $request, $id)
+    {
+        $gizi = MenuGiziHarian::findOrFail($id);
+
+        $validated = $request->validate([
+            'energi' => 'required|numeric|min:0',
+            'protein' => 'required|numeric|min:0',
+            'lemak' => 'required|numeric|min:0',
+            'karbohidrat' => 'required|numeric|min:0',
+            'serat' => 'required|numeric|min:0',
+            'natrium' => 'required|numeric|min:0',
+        ]);
+
+        $gizi->update($validated);
+        return response()->json(['success' => true, 'message' => 'Data nutrisi berhasil diperbarui']);
+    }
+
+    public function deleteMenuGizi($id)
+    {
+        $gizi = MenuGiziHarian::findOrFail($id);
+        $gizi->delete();
+        return response()->json(['success' => true, 'message' => 'Data nutrisi berhasil dihapus']);
+    }
+
+    public function exportGiziHarian($idmenu)
+    {
+        $menu = Menu::find($idmenu);
+        if (!$menu) {
+            return redirect()->back()->with('error', 'Menu tidak ditemukan');
+        }
+
+        $tanggal = \Carbon\Carbon::parse($menu->tanggal_kirim)->format('d-m-Y');
+        return Excel::download(
+            new LaporanGiziHarianExport($idmenu),
+            'Laporan_Gizi_' . $tanggal . '.xlsx'
+        );
+    }
+}
+

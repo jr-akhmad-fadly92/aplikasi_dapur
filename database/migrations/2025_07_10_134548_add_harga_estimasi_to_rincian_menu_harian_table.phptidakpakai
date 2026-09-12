@@ -1,0 +1,33 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class AddHargaEstimasiToRincianMenuHarianTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::table('rincian_menu_harian', function (Blueprint $table) {
+            $table->decimal('harga_satuan', 15, 2)->after('bumbu')->default(0);
+            $table->decimal('estimasi_total_harga', 15, 2)->after('harga_satuan')->default(0);
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::table('rincian_menu_harian', function (Blueprint $table) {
+            $table->dropColumn(['harga_satuan', 'estimasi_total_harga']);
+        });
+    }
+}

@@ -1,0 +1,2090 @@
+<?php
+
+// Namespace untuk menempatkan controller di folder App\Http\Controllers\office
+namespace App\Http\Controllers\office;
+
+// Import base controller Laravel
+use App\Http\Controllers\Controller;
+use App\Models\Buffer;
+use App\Models\Menu;
+// Import Request class untuk menangani request HTTP
+use Illuminate\Http\Request;
+
+// Import model TbRincianMenuTemp
+use App\Models\TbRincianMenuTemp;
+
+// Import model rincian_menu_harian
+use App\Models\rincian_menu_harian;
+
+// Import model MenuBahan
+use App\Models\MenuBahan;
+use App\Models\PerhitunganBumbu;
+use App\Models\Resep;
+use App\Models\TbMasterBahan;
+// Import model satuan
+use App\Models\TbSatuan;
+
+// Import class Carbon untuk manipulasi tanggal
+use Illuminate\Support\Carbon;
+
+// *Catatan:* Baris ini tampaknya tidak diperlukan (Mockery\Undefined)
+use Mockery\Undefined;
+
+// Import DB Facade untuk query builder
+use Illuminate\Support\Facades\DB;
+use ReflectionFunctionAbstract;
+// Import DataTables package (Yajra) untuk integrasi DataTables di server side
+use Yajra\DataTables\DataTables;
+
+class RincianMenuTempController extends Controller
+{
+    public function storeKarbohidrat(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            'id_karbohidrat' => 'required|integer',
+
+        ]);
+
+        // 2️⃣ Update kolom 'karbohidrat' pada tabel tb_menu sesuai ID menu
+        DB::table('tb_menu')
+            ->where('id', $request->id_menu)
+            ->update([
+                'karbohidrat' => $request->id_karbohidrat,
+            ]);
+
+        // 3️⃣ Hitung jumlah penerima kategori A dan B dari histori menu
+        $jumlah_siswa_a = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_a');
+
+        $jumlah_siswa_b = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_b');
+
+        // 4️⃣ Ambil input porsi A dan B
+        $karbo_porsi_a = $request->porsi_a;
+        $karbo_porsi_b = $request->porsi_b;
+
+        // 5️⃣ Hitung kebutuhan beras kategori A dan B (dibulatkan ke atas)
+        $karbo_kebutuhan_beras_a = ceil(($jumlah_siswa_a * $karbo_porsi_a * 3 / 4 / 2) / 1000);
+        $karbo_kebutuhan_beras_b = ceil(($jumlah_siswa_b * $karbo_porsi_b * 3 / 4 / 2) / 1000);
+        $karbo_kebutuhan_beras_total = $karbo_kebutuhan_beras_a + $karbo_kebutuhan_beras_b;
+
+        // 6️⃣ Hitung kebutuhan tray, steamer, pintu steamer, air, produksi
+        $karbo_kebutuhan_tray = ceil($karbo_kebutuhan_beras_total / 3);
+        $karbo_kebutuhan_steamer = ceil($karbo_kebutuhan_tray / 24);
+        $karbo_kebutuhan_pintu_steamer = ceil($karbo_kebutuhan_tray / 12);
+        $karbo_kebutuhan_air = $karbo_kebutuhan_beras_total * 4 / 3;
+
+        $karbo_hasil_produksi = $karbo_kebutuhan_beras_total * 4 / 3 * 2 * 1000;
+        $karbo_hasil_produksi_kg = $karbo_kebutuhan_beras_total * 4 / 3 * 2;
+
+        // 7️⃣ Hitung berapa kali mencuci beras (setiap 72 kg 1 kali cuci)
+        $karbo_hitungan_cuci_beras = ceil($karbo_kebutuhan_beras_total / 72);
+
+        // 8️⃣ Distribusi cuci ke slot cuci 1-5
+        $jumlah_yang_dicuci = $karbo_kebutuhan_beras_total;
+        $cuci_1 = 0;
+        $cuci_2 = 0;
+        $cuci_3 = 0;
+        $cuci_4 = 0;
+        $cuci_5 = 0;
+
+        // Slot cuci 1
+        if ($jumlah_yang_dicuci > 72) {
+            $cuci_1 = 72;
+            $jumlah_yang_dicuci -= 72;
+        } else {
+            $cuci_1 = $jumlah_yang_dicuci;
+            $jumlah_yang_dicuci = 0;
+        }
+
+        // Slot cuci 2
+        if ($jumlah_yang_dicuci > 0) {
+            if ($jumlah_yang_dicuci > 72) {
+                $cuci_2 = 72;
+                $jumlah_yang_dicuci -= 72;
+            } else {
+                $cuci_2 = $jumlah_yang_dicuci;
+                $jumlah_yang_dicuci = 0;
+            }
+        }
+
+        // Slot cuci 3
+        if ($jumlah_yang_dicuci > 0) {
+            if ($jumlah_yang_dicuci > 72) {
+                $cuci_3 = 72;
+                $jumlah_yang_dicuci -= 72;
+            } else {
+                $cuci_3 = $jumlah_yang_dicuci;
+                $jumlah_yang_dicuci = 0;
+            }
+        }
+
+        // Slot cuci 4
+        if ($jumlah_yang_dicuci > 0) {
+            if ($jumlah_yang_dicuci > 72) {
+                $cuci_4 = 72;
+                $jumlah_yang_dicuci -= 72;
+            } else {
+                $cuci_4 = $jumlah_yang_dicuci;
+                $jumlah_yang_dicuci = 0;
+            }
+        }
+
+        // Slot cuci 5
+        if ($jumlah_yang_dicuci > 0) {
+            if ($jumlah_yang_dicuci > 72) {
+                $cuci_5 = 72;
+                $jumlah_yang_dicuci -= 72;
+            } else {
+                $cuci_5 = $jumlah_yang_dicuci;
+                $jumlah_yang_dicuci = 0;
+            }
+        }
+
+        DB::table('tb_rumus_perhitungan_karbo')->insert([
+            'id_menu' => $request->id_menu,
+            'karbo_porsi_a' => $karbo_porsi_a,
+            'karbo_porsi_b' => $karbo_porsi_b,
+            'karbo_kebutuhan_beras_a' => $karbo_kebutuhan_beras_a,
+            'karbo_kebutuhan_beras_b' => $karbo_kebutuhan_beras_b,
+            'karbo_kebutuhan_beras_total' => $karbo_kebutuhan_beras_total,
+            'karbo_kebutuhan_tray' => $karbo_kebutuhan_tray,
+            'karbo_kebutuhan_steamer' => $karbo_kebutuhan_steamer,
+            'karbo_kebutuhan_pintu_steamer' => $karbo_kebutuhan_pintu_steamer,
+            'karbo_kebutuhan_air' => $karbo_kebutuhan_air,
+            'karbo_hasil_produksi' => $karbo_hasil_produksi,
+            'karbo_hasil_produksi_kg' => $karbo_hasil_produksi_kg,
+            'karbo_hitungan_cuci_beras' => $karbo_hitungan_cuci_beras,
+        ]);
+        
+        $data_karbo = MenuBahan::where('menu_id', $request->id_karbohidrat)->get();
+        foreach ($data_karbo as $row) {
+            if ($row->status_bahan_baku == 1) {
+                $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                    ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                    ->first();
+                $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                    ->first()->spesifikasi;
+                $totalBerasKg = $karbo_kebutuhan_beras_total ?? 0;
+                $pack_utama = $totalBerasKg / 36;
+                $pack25 = floor($pack_utama) * 1;
+                $pack5 = floor($pack_utama) * 2;
+                $pack1 = floor($pack_utama) * 1;
+                $sisa = $totalBerasKg - floor($pack_utama) * 36;
+                $pack25sisa = floor($sisa / 25);
+
+                $sisa = $sisa -  $pack25sisa * 25;
+                $pack25 = $pack25sisa + $pack25;
+                $pack5 = floor($sisa / 5) + $pack5;
+                $pack1 = ($sisa % 5) + $pack1;
+                if ($row->bahan_id == 6) {
+                    $keterangan = '25kg : ' . $pack25 . 'pack | 5kg : ' . $pack5 . 'pack | 1kg : ' . $pack1 . 'pack';
+                }
+                if ($harga) {
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu'       => $request->id_menu,
+                        'id_resep'      => $request->id_karbohidrat,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $karbo_kebutuhan_beras_total,
+                        'bumbu'         => 0,
+                        'harga'         => $harga->harga_bahan,
+                        'total_harga'   => $harga->harga_bahan * $karbo_kebutuhan_beras_total,
+                        'id_satuan'     => 25,
+                        'jumlah_box'     => 1,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'     => $keterangan ?? '-',
+                    ]);
+                }
+            } else {
+                $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                    ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                    ->first();
+                $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                    ->first();
+                $keterangan = $keterangan->spesifikasi ?? '-';
+                $data_perhitungan_bumbu = PerhitunganBumbu::where('id_menu_bahan', $row->id)->first();
+                $pengali = $data_perhitungan_bumbu->pengali ?? 10;
+                $pembagi = $data_perhitungan_bumbu->pembagi ?? 115;
+                $jumlah_kebutuhan = $karbo_kebutuhan_beras_total * 1000;
+                $jumlah_kebutuhan = $jumlah_kebutuhan / $pembagi;
+                $jumlah_kebutuhan = $jumlah_kebutuhan * $pengali;
+                $bahan = TbMasterBahan::find($row->bahan_id);
+                
+                if ($harga) {
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu'       => $request->id_menu,
+                        'id_resep'      => $request->id_karbohidrat,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $jumlah_kebutuhan,
+                        'bumbu'         => 0,
+                        'harga'         => $harga->harga_bahan,
+                        'total_harga'   =>  $harga->harga_bahan * $jumlah_kebutuhan / 1000,
+                        'id_satuan'     => $bahan->satuan_bahan,
+                        'jumlah_box'     => 1,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'     => $keterangan ?? '-',
+                    ]);
+                }
+            }
+        }
+
+
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Karbohidrat berhasil disimpan.');
+    }
+
+
+    public function dt_karbohidrat_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        /*if ($data->status_pengajuan == 'pending')
+        {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan',
+                    'tb_rincian_menu_temp.id_satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->karbohidrat)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        }else{
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan',
+                    'tb_rincian_menu_temp.id_satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->karbohidrat)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        }*/
+
+        $table = DB::table('tb_rincian_menu_temp')
+            ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_rincian_menu_temp.id_satuan', '=', 'tb_satuan.id')
+            ->select(
+                'tb_master_bahan.bahan',
+
+                'tb_rincian_menu_temp.id',
+                'tb_rincian_menu_temp.jumlah',
+                'tb_rincian_menu_temp.harga',
+                'tb_rincian_menu_temp.total_harga',
+                'tb_rincian_menu_temp.keterangan',
+                'tb_rincian_menu_temp.jumlah_box',
+                'tb_satuan.satuan',
+                'tb_rincian_menu_temp.id_satuan'
+            )
+            ->where('tb_rincian_menu_temp.id_resep', $data->karbohidrat)
+            ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+            ->get();
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                $data_satuan = TbSatuan::find($row->id_satuan);
+                $satuan = $data_satuan->satuan;
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                if ($row->bahan == 'beras') {
+                    return number_format($row->jumlah, 0, '', '.') . ' kg';
+                } else {
+                    return number_format($row->jumlah, 0, '', '.') . ' ' .  $satuan;
+                }
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_harga', function ($row) {
+                return '<input type="number" class="form-control jumlah_harga" data-id="' . $row->id . '" value="' . $row->harga . '"> <button class="btn btn-success btn-sm update-jumlah-harga" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_jumlah_box', function ($row) {
+                return '<input type="number" class="form-control jumlah_box" data-id="' . $row->id . '" value="' . $row->jumlah_box . '"> <button class="btn btn-success btn-sm update-jumlah-box" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_keterangan', function ($row) {
+                return '<input type="text" class="form-control jumlah_keterangan" data-id="' . $row->id . '" value="' . $row->keterangan . '"> <button class="btn btn-success btn-sm update-jumlah-keterangan" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar', 'input_keterangan', 'input_jumlah_box', 'input_harga'])
+            ->make(true);
+    }
+
+
+    public function dt_karbohidrat($id_menu)
+    {
+        $table = rincian_menu_harian::where('status', 0)
+            ->where('jumlah', '>', 0)
+            ->where('jenis', 1) //jenis bahan masak
+            ->orderBy('tanggal_masuk', 'asc')
+            ->get();
+
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            ->editColumn('status', function ($row) {
+                return $row->status == 0 ? "in Stock" : "out of stock";
+            })
+            ->addColumn('lama_penyimpanan', function ($row) {
+                return now()->diffInDays(\Carbon\Carbon::parse($row->tanggal_masuk)) . " hari";
+            })
+            ->addColumn('nama_satuan', function ($table) {
+                $satuan = TbSatuan::where('id', $table->id_satuan)->first();
+                return $satuan->satuan;
+            })
+            ->rawColumns(['status', 'nama_satuan'])
+            ->make(true);
+    }
+
+    public function update_jumlah_rincian_bahan(Request $request)
+    {
+        // ✅ Validasi input request (pastikan id dan jumlah ada, jumlah harus numerik)
+        $request->validate([
+            'id'     => 'required',
+            'jumlah' => 'required|numeric',
+        ]);
+
+        // ✅ Ambil data rincian menu sementara berdasarkan ID
+        $rincian = DB::table('tb_rincian_menu_temp')->find($request->id);
+
+        // ✅ Ambil data bahan dari tabel MenuBahan untuk cek status bahan baku
+        $data = MenuBahan::where('menu_id', $rincian->id_resep)
+            ->where('bahan_id', $rincian->id_bahan)
+            ->first();
+
+        // ✅ Update tabel rincian_menu_harian jika data ditemukan
+        if ($rincian) {
+            // Hitung total harga default (berbasis per 1000 gram/ml)
+            $total_harga = $rincian->harga * $request->jumlah / 1000;
+            $keterangan  = $rincian->keterangan;
+
+            // Jika status bahan baku bukan 3 → hitung dengan metode berbeda
+            if ($data->status_bahan_baku != 3) {
+                // Total harga dihitung langsung dari jumlah * harga
+                $total_harga = $rincian->harga * $request->jumlah;
+
+                // Konversi jumlah ke kilogram (anggap jumlah adalah gram)
+                $totalBerasKg = $request->jumlah ?? 0;
+
+                // Hitung jumlah pack utama (36 kg = 1 paket khusus)
+                $pack_utama = $totalBerasKg / 36;
+
+                // Hitung pembagian pack awal
+                $pack25 = floor($pack_utama) * 1;
+                $pack5  = floor($pack_utama) * 2;
+                $pack1  = floor($pack_utama) * 1;
+
+                // Hitung sisa setelah diambil pack utama
+                $sisa = $totalBerasKg - floor($pack_utama) * 36;
+
+                // Jika sisa lebih dari 25 → ambil 1 pack 25kg
+                if ($sisa >= 25) {
+                    $pack25 += 1;
+                    $sisa   -= 25;
+                }
+
+                // Hitung tambahan pack 5kg dan 1kg dari sisa
+                $pack5 += floor($sisa / 5);
+                $pack1 += ($sisa % 5);
+
+                // Jika bahan dengan ID = 6 (contoh: Beras), buat keterangan pembagian pack
+                if ($rincian->id_bahan == 6) {
+                    $keterangan = '25kg : ' . $pack25 . ' pack | 5kg : ' . $pack5 . ' pack | 1kg : ' . $pack1 . ' pack';
+                }
+            }
+            $satuan = TbSatuan::find($rincian->id_satuan);
+            if($satuan->satuan == 'buah' )
+            {
+                // ✅ Update data ke tabel tb_rincian_menu_temp
+                DB::table('tb_rincian_menu_temp')
+                    ->where('id', $request->id)
+                    ->update([
+                        'jumlah'      => $request->jumlah,
+                        'harga'       => $rincian->harga,
+                        'total_harga' => $total_harga*1000,
+                        'keterangan'  => $keterangan
+                    ]);
+            }else{
+                // ✅ Update data ke tabel tb_rincian_menu_temp
+                DB::table('tb_rincian_menu_temp')
+                    ->where('id', $request->id)
+                    ->update([
+                        'jumlah'      => $request->jumlah,
+                        'harga'       => $rincian->harga,
+                        'total_harga' => $total_harga,
+                        'keterangan'  => $keterangan
+                    ]);
+            }
+            
+        }
+
+        // ✅ Return respon JSON sukses
+        return response()->json([
+            'message' => 'Jumlah bahan berhasil diperbarui!'
+        ]);
+    }
+
+
+    public function update_jumlah_box(Request $request)
+    {
+        // ✅ Validasi input request
+        $request->validate([
+            'id' => 'required',
+            'jumlah' => 'required|numeric',
+        ]);
+        $rincian    = DB::table('tb_rincian_menu_temp')->find($request->id);
+        $data       = MenuBahan::where('menu_id', $rincian->id_resep)->where('bahan_id', $rincian->id_bahan)->first();
+
+        // ✅ Update tabel rincian_menu_harian
+
+        if ($rincian) {
+
+            DB::table('tb_rincian_menu_temp')->where('id', $request->id)->update([
+                'jumlah_box' => $request->jumlah,
+            ]);
+        }
+
+
+        // ✅ Return respon JSON
+        return response()->json([
+            'message' => 'Jumlah Box berhasil diperbarui!'
+        ]);
+    }
+
+    public function update_keterangan(Request $request)
+    {
+        // ✅ Validasi input request
+        $request->validate([
+            'id' => 'required',
+            'keterangan' => 'required',
+        ]);
+        $rincian    = DB::table('tb_rincian_menu_temp')->find($request->id);
+        $data       = MenuBahan::where('menu_id', $rincian->id_resep)->where('bahan_id', $rincian->id_bahan)->first();
+
+        // ✅ Update tabel rincian_menu_harian
+
+        if ($rincian) {
+            $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $rincian->id_bahan)->first();
+
+            DB::table('tb_rincian_menu_temp')->where('id', $request->id)->update([
+                'keterangan' => $request->keterangan,
+            ]);
+        }
+
+
+        // ✅ Return respon JSON
+        return response()->json([
+            'message' => 'keterangan berhasil diperbarui!'
+        ]);
+    }
+
+    public function update_harga(Request $request)
+    {
+        // ✅ Validasi input request
+        $request->validate([
+            'id' => 'required',
+            'harga' => 'required',
+        ]);
+        $rincian    = DB::table('tb_rincian_menu_temp')->find($request->id);
+        $data       = MenuBahan::where('menu_id', $rincian->id_resep)->where('bahan_id', $rincian->id_bahan)->first();
+
+        // ✅ Update tabel rincian_menu_harian
+
+        if ($rincian) {
+            $total_harga = $request->harga * $rincian->jumlah / 1000;
+            if ($data->status_bahan_baku != 3) {
+                $total_harga = $request->harga * $rincian->jumlah;
+            }
+            DB::table('tb_rincian_menu_temp')->where('id', $request->id)->update([
+                'harga'         => $request->harga,
+                'total_harga'   => $total_harga
+
+            ]);
+        }
+
+
+        // ✅ Return respon JSON
+        return response()->json([
+            'message' => 'harga berhasil diperbarui!'
+        ]);
+    }
+
+    public function update_sekolahb(Request $request)
+    {
+        // ✅ Validasi input request
+        $request->validate([
+            'id' => 'required',
+            'jumlah_b' => 'required',
+        ]);
+        $rincian    = DB::table('rincian_sekolah')->find($request->id);
+
+
+        // ✅ Update tabel rincian_menu_harian
+        DB::table('rincian_sekolah')->where('id', $request->id)->update([
+            'jumlah_penerima_a' => $rincian->jumlah_penerima_a,
+            'jumlah_penerima_b' => $request->jumlah_b,
+            'jumlah_penerima_total' => $request->jumlah_b + $rincian->jumlah_penerima_a,
+
+        ]);
+
+
+
+        // ✅ Return respon JSON
+        return response()->json([
+            'message' => 'Sekolah berhasil diperbarui!'
+        ]);
+    }
+
+    public function delete_karbohidrat_temp($id)
+    {
+        // 1️⃣ Ambil data menu berdasarkan ID
+        $data = Menu::find($id);
+
+        // 2️⃣ Hapus data dari tabel tb_rincian_menu_temp
+        // yang id_menu-nya = $id dan id_reset = nilai karbohidrat pada tb_menu
+        DB::table('tb_rincian_menu_temp')
+            ->where('id_menu', $id)
+            ->where('id_resep', $data->karbohidrat)
+            ->delete();
+
+        // 3️⃣ Hapus data dari tabel tb_rumus_perhitungan_karbo
+        // yang id_menu-nya = $id
+        DB::table('tb_rumus_perhitungan_karbo')
+            ->where('id_menu', $id)
+            ->delete();
+
+        // 4️⃣ Update kolom karbohidrat di tb_menu menjadi NULL
+        DB::table('tb_menu')
+            ->where('id', $id)
+            ->update(['karbohidrat' => null]);
+
+        // 5️⃣ Redirect kembali ke halaman rincian bahan dengan pesan sukses
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $id])
+            ->with('success', 'Karbohidrat berhasil dihapus.');
+    }
+
+
+    public function storeSayur(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            'id_sayur' => 'required|integer',
+
+        ]);
+
+        // 2️⃣ Update kolom 'karbohidrat' pada tabel tb_menu sesuai ID menu
+        DB::table('tb_menu')
+            ->where('id', $request->id_menu)
+            ->update([
+                'sayur' => $request->id_sayur,
+            ]);
+
+        // 3️⃣ Hitung jumlah penerima kategori A dan B dari histori menu
+        $jumlah_siswa_a = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_a');
+
+        $jumlah_siswa_b = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_b');
+
+        // 4️⃣ Ambil input porsi A dan B
+        $sayur_porsi_a = $request->porsi_a;
+        $sayur_porsi_b = $request->porsi_b;
+        $kebutuhan_total_matang = $jumlah_siswa_b * $sayur_porsi_b / 1000 + $jumlah_siswa_a * $sayur_porsi_a / 1000;
+
+
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+        DB::table('tb_rumus_perhitungan_sayur')->insert([
+            'id_menu' => $request->id_menu,
+            'sayur_porsi_a' => $sayur_porsi_a,
+            'sayur_porsi_b' => $sayur_porsi_b,
+            'kebutuhan_total_matang' => $kebutuhan_total_matang + $kebutuhan_total_matang * $buffer /100,
+            'status' => 1,
+
+        ]);
+
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Sayur berhasil disimpan.');
+    }
+
+    public function delete_sayur_temp($id)
+    {
+        // 1️⃣ Ambil data menu berdasarkan ID
+        $data = Menu::find($id);
+
+
+        // 3️⃣ Hapus data dari tabel tb_rumus_perhitungan_karbo
+        // yang id_menu-nya = $id
+        DB::table('tb_rumus_perhitungan_sayur')
+            ->where('id_menu', $id)
+            ->delete();
+
+        DB::table('tb_rincian_menu_temp')->where('id_menu', $id)->where('id_resep', $data->sayur)
+            ->delete();
+
+        // 4️⃣ Update kolom karbohidrat di tb_menu menjadi NULL
+        DB::table('tb_menu')
+            ->where('id', $id)
+            ->update(['sayur' => null]);
+
+        // 5️⃣ Redirect kembali ke halaman rincian bahan dengan pesan sukses
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $id])
+            ->with('success', 'Sayur berhasil dihapus.');
+    }
+
+    public function storeSayur_simpan(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            //'id_sayur' => 'required|integer',
+
+        ]);
+        $kebutuhan_sayur_a = 0;
+        $kebutuhan_sayur_b = 0;
+        $kebutuhan_sayur_c = 0;
+        $kebutuhan_sayur_d = 0;
+        $penyusutan_sayur_a = 0;
+        $penyusutan_sayur_b = 0;
+        $penyusutan_sayur_c = 0;
+        $penyusutan_sayur_d = 0;
+        $kebutuhan_matang_a = 0;
+        $kebutuhan_matang_b = 0;
+        $kebutuhan_matang_c = 0;
+        $kebutuhan_matang_d = 0;
+
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+        $buffer = 0;
+        if ($request->id_bahan_1_sayur != 0) {
+            $kebutuhan_sayur_a  = $request->jumlah_bahan_1_sayur + $request->jumlah_bahan_1_sayur * $buffer / 100;
+            $penyusutan_sayur_a = $request->penyusutan_1_sayur;
+            $kebutuhan_matang_a = $request->jumlah_bahan_1_sayur - $request->penyusutan_1_sayur * $request->jumlah_bahan_1_sayur / 100;
+        }
+        if ($request->id_bahan_2_sayur != 0) {
+            $kebutuhan_sayur_b  = $request->jumlah_bahan_2_sayur + $request->jumlah_bahan_2_sayur * $buffer / 100;
+            $penyusutan_sayur_b = $request->penyusutan_2_sayur;
+            $kebutuhan_matang_b = $request->jumlah_bahan_2_sayur - $request->penyusutan_2_sayur * $request->jumlah_bahan_2_sayur / 100;
+        }
+        if ($request->id_bahan_3_sayur != 0) {
+            $kebutuhan_sayur_c  = $request->jumlah_bahan_3_sayur + $request->jumlah_bahan_3_sayur * $buffer / 100;
+            $penyusutan_sayur_c = $request->penyusutan_3_sayur;
+            $kebutuhan_matang_c = $request->jumlah_bahan_3_sayur - $request->penyusutan_3_sayur * $request->jumlah_bahan_3_sayur / 100;
+        }
+        if ($request->id_bahan_4_sayur != 0) {
+            $kebutuhan_sayur_d  = $request->jumlah_bahan_4_sayur + $request->jumlah_bahan_4_sayur * $buffer / 100;
+            $penyusutan_sayur_d = $request->penyusutan_4_sayur;
+            $kebutuhan_matang_d = $request->jumlah_bahan_4_sayur - $request->penyusutan_4_sayur * $request->jumlah_bahan_4_sayur / 100;
+        }
+        
+
+        DB::table('tb_rumus_perhitungan_sayur')->where('id_menu', $request->id_menu)->update([
+            'kebutuhan_sayur_a' => $kebutuhan_sayur_a ,
+            'kebutuhan_sayur_b' => $kebutuhan_sayur_b,
+            'kebutuhan_sayur_c' => $kebutuhan_sayur_c,
+            'kebutuhan_sayur_d' => $kebutuhan_sayur_d,
+            'penyusutan_sayur_a' => $penyusutan_sayur_a,
+            'penyusutan_sayur_b' => $penyusutan_sayur_b,
+            'penyusutan_sayur_c' => $penyusutan_sayur_c,
+            'penyusutan_sayur_d' => $penyusutan_sayur_d,
+            'kebutuhan_matang_a' => $kebutuhan_matang_a,
+            'kebutuhan_matang_b' => $kebutuhan_matang_b,
+            'kebutuhan_matang_c' => $kebutuhan_matang_c,
+            'kebutuhan_matang_d' => $kebutuhan_matang_d,
+            'kebutuhan_matang_realisasi' => $request->kebutuhan_matang_realisasi_input_sayur,
+            'kebutuhan_total_mentah' => $request->kebutuhan_mentah_input_sayur,
+            'kapasitas_tilting' => 20,
+            'jumlah_masak' => $request->kebutuhan_mentah_input_sayur / 20,
+
+            'status' => 2,
+
+        ]);
+
+        $jumlah_box_sayur_rencana =  $request->kebutuhan_mentah_input_sayur / 20;
+        if($request->jumlah_box_sayur_rencana)
+        {
+           // $jumlah_box_sayur_rencana = $request->jumlah_box_sayur_rencana;
+        }
+        $jumlah_tilting = $request->kebutuhan_mentah_input_sayur / 20;
+        $data_rumus_sayur = DB::table('tb_rumus_perhitungan_sayur')->where('id_menu', $request->id_menu)->first();
+        $data_menu = Menu::where('id', $request->id_menu)->first();
+        $data_sayur = MenuBahan::where('menu_id', $data_menu->sayur)->get();
+        foreach ($data_sayur as $row) {
+            $jumlah_box = 1;
+            $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                ->first() ?? 0;
+            $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                ->first();
+            $keterangan = $keterangan->spesifikasi ?? '-';
+            if ($row->status_bahan_baku == 1) {
+                $jumlah_box = ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100 )/ $jumlah_tilting;
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->sayur,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100),
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_sayur_rencana,
+                    'id_satuan'     => 25,
+                    //'jumlah_box'     => 1,
+                    'id_kontrak'     => $harga->id ?? 0,
+                    'keterangan'     => $keterangan ?? '-'
+                ]);
+            } else if ($row->status_bahan_baku == 2) {
+                $jumlah_box = ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100) / $jumlah_tilting;
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->sayur,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_sayur_b + $kebutuhan_sayur_b * $buffer / 100),
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_sayur_b + $kebutuhan_sayur_b * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_sayur_rencana,
+                    'id_satuan'     => 25,
+                    'id_kontrak'     => $harga->id ?? 0,
+                    'keterangan'     => $keterangan ?? '-'
+                ]);
+            } else if ($row->status_bahan_baku == 4) {
+                $jumlah_box = ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100) / $jumlah_tilting;
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->sayur,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_sayur_c + $kebutuhan_sayur_c * $buffer / 100),
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_sayur_c + $kebutuhan_sayur_c * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_sayur_rencana,
+                    'id_satuan'     => 25,
+                    'id_kontrak'     => ($harga->id ?? 0),
+                    'keterangan'     => $keterangan ?? '-'
+                ]);
+            } else if ($row->status_bahan_baku == 5) {
+                $jumlah_box = ($kebutuhan_sayur_a + $kebutuhan_sayur_a * $buffer / 100) / $jumlah_tilting;
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->sayur,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_sayur_d + $kebutuhan_sayur_d * $buffer / 100 ),
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_sayur_d + $kebutuhan_sayur_d * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_sayur_rencana,
+                    'id_satuan'     => 25,
+                    'id_kontrak'     => ($harga->id ?? 0),
+                    'keterangan'     => $keterangan ?? '-'
+
+                ]);
+            } else {
+                $data_perhitungan_bumbu = PerhitunganBumbu::where('id_menu_bahan', $row->id)->first();
+                $pengali = $data_perhitungan_bumbu->pengali ?? 10;
+                $pembagi = $data_perhitungan_bumbu->pembagi ?? 115;
+                $jumlah_kebutuhan = $request->kebutuhan_mentah_input_sayur * 1000;
+                $jumlah_kebutuhan = $jumlah_kebutuhan / $pembagi;
+                $jumlah_kebutuhan = $jumlah_kebutuhan * $pengali;
+
+                $bahan = TbMasterBahan::find($row->bahan_id);
+                if (!$bahan) {
+                    $jumlah_kebutuhan = 9999;
+
+                    $satuan_bahan = 1;
+                } else {
+                    $jumlah_kebutuhan = $jumlah_kebutuhan;
+                    if ($bahan->satuan_bahan == 1) {
+                        $satuan_bahan = 1;
+                    } else if ($bahan->satuan_bahan == 27) {
+                        $satuan_bahan = 27;
+                    } else if ($bahan->satuan_bahan == 23) {
+                        $satuan_bahan = 23;
+                    } else if ($bahan->satuan_bahan == 32) {
+                        $satuan_bahan = 32;
+                    } else {
+                        $satuan_bahan = 1;
+                    }
+                }
+                $nama_satuan = TbSatuan::find($satuan_bahan);
+                if ($satuan_bahan == 1 || $satuan_bahan == 27) 
+                {
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->sayur,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $jumlah_kebutuhan ?? 0,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0) / 1000 * $jumlah_kebutuhan,
+                        'jumlah_box'    => $jumlah_box,
+                        'id_satuan'     => ($satuan_bahan ?? 2),
+                        'id_kontrak'     => ($harga->id ?? 0),
+                        'keterangan'     => $keterangan ?? '-'
+                    ]);
+                }else{
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->sayur,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $jumlah_kebutuhan ?? 0,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0)  * $jumlah_kebutuhan,
+                        'jumlah_box'    => $jumlah_box,
+                        'id_satuan'     => ($satuan_bahan ?? 2),
+                        'id_kontrak'     => ($harga->id ?? 0),
+                        'keterangan'     => $keterangan ?? '-'
+                    ]);
+                }
+
+                
+            }
+        }
+
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Sayur berhasil disimpan.');
+    }
+
+    public function dt_sayur_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        /*if ($data->status_pengajuan == 'pending') {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan',
+                    'tb_rincian_menu_temp.id_satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->sayur)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan',
+                    'tb_rincian_menu_temp.id_satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->sayur)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        }*/
+
+        $table = DB::table('tb_rincian_menu_temp')
+            ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_rincian_menu_temp.id_satuan', '=', 'tb_satuan.id')
+            ->select(
+                'tb_master_bahan.bahan',
+
+                'tb_rincian_menu_temp.id',
+                'tb_rincian_menu_temp.jumlah',
+                'tb_rincian_menu_temp.harga',
+                'tb_rincian_menu_temp.total_harga',
+                'tb_rincian_menu_temp.keterangan',
+                'tb_rincian_menu_temp.jumlah_box',
+                'tb_satuan.satuan',
+                'tb_rincian_menu_temp.id_satuan'
+            )
+            ->where('tb_rincian_menu_temp.id_resep', $data->sayur)
+            ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+            ->get();
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                $data_satuan = TbSatuan::find($row->id_satuan);
+                $satuan = $data_satuan->satuan;
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                if ($row->bahan == 'beras') {
+                    return number_format($row->jumlah, 0, '', '.') . ' kg';
+                } else {
+                    return number_format($row->jumlah, 0, '', '.') . ' ' .  $satuan;
+                }
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_harga', function ($row) {
+                return '<input type="number" class="form-control jumlah_harga" data-id="' . $row->id . '" value="' . $row->harga . '"> <button class="btn btn-success btn-sm update-jumlah-harga" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_jumlah_box', function ($row) {
+                return '<input type="number" class="form-control jumlah_box" data-id="' . $row->id . '" value="' . $row->jumlah_box . '"> <button class="btn btn-success btn-sm update-jumlah-box" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_keterangan', function ($row) {
+                return '<input type="text" class="form-control jumlah_keterangan" data-id="' . $row->id . '" value="' . $row->keterangan . '"> <button class="btn btn-success btn-sm update-jumlah-keterangan" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar', 'input_keterangan', 'input_jumlah_box', 'input_harga'])
+            ->make(true);
+    }
+
+    public function storeProtein(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            'id_protein' => 'required|integer',
+
+        ]);
+
+        // 2️⃣ Update kolom 'Protein' pada tabel tb_menu sesuai ID menu
+        DB::table('tb_menu')
+            ->where('id', $request->id_menu)
+            ->update([
+                'protein' => $request->id_protein,
+            ]);
+
+        // 3️⃣ Hitung jumlah penerima kategori A dan B dari histori menu
+        $jumlah_siswa_a = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_a');
+
+        $jumlah_siswa_b = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_b');
+
+        // 4️⃣ Ambil input porsi A dan B
+        $protein_porsi_a = $request->porsi_a;
+        $protein_porsi_b = $request->porsi_b;
+        $data_menu = Menu::find($request->id_menu);
+        $data_resep = MenuBahan::where('menu_id', $data_menu->protein)->where('status_bahan_baku', 1)->first();
+        $data_bahan = TbMasterBahan::find($data_resep->bahan_id);
+
+        $kebutuhan_total_matang = $jumlah_siswa_b * $protein_porsi_b / 1000 + $jumlah_siswa_a * $protein_porsi_a / 1000;
+        if ($data_bahan->satuan_bahan == 36 || $data_bahan->satuan_bahan == 40 ||  $data_bahan->satuan_bahan == 32) {
+            $kebutuhan_total_matang = $kebutuhan_total_matang * 10;
+        } else {
+        }
+
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+        DB::table('tb_rumus_perhitungan_protein')->insert([
+            'id_menu' => $request->id_menu,
+            'protein_porsi_a' => $protein_porsi_a,
+            'protein_porsi_b' => $protein_porsi_b,
+            'kebutuhan_total_matang' => $kebutuhan_total_matang + $kebutuhan_total_matang * $buffer/ 100 ,
+            'status' => 1,
+
+        ]);
+
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Lauk berhasil disimpan.');
+    }
+
+    public function delete_protein_temp($id)
+    {
+        // 1️⃣ Ambil data menu berdasarkan ID
+        $data = Menu::find($id);
+
+
+        // 3️⃣ Hapus data dari tabel tb_rumus_perhitungan_karbo
+        // yang id_menu-nya = $id
+        DB::table('tb_rumus_perhitungan_protein')
+            ->where('id_menu', $id)
+            ->delete();
+
+        DB::table('tb_rincian_menu_temp')->where('id_menu', $id)->where('id_resep', $data->protein)
+            ->delete();
+
+        // 4️⃣ Update kolom karbohidrat di tb_menu menjadi NULL
+        DB::table('tb_menu')
+            ->where('id', $id)
+            ->update(['protein' => null]);
+
+        // 5️⃣ Redirect kembali ke halaman rincian bahan dengan pesan sukses
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $id])
+            ->with('success', 'Lauk berhasil dihapus.');
+    }
+
+    public function storeProtein_simpan(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            //'id_sayur' => 'required|integer',
+
+        ]);
+        $kebutuhan_protein_a = 0;
+        $kebutuhan_protein_b = 0;
+        $penyusutan_protein_a = 0;
+        $penyusutan_protein_b = 0;
+        $kebutuhan_matang_a = 0;
+        $kebutuhan_matang_b = 0;
+
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+        $buffer = 0;
+        if ($request->id_bahan_1 != 0) {
+            $kebutuhan_protein_a  = $request->jumlah_bahan_1 + $request->jumlah_bahan_1 * $buffer / 100;
+            $penyusutan_protein_a = $request->penyusutan_1;
+            $kebutuhan_matang_a = $kebutuhan_protein_a - $request->penyusutan_1 * $kebutuhan_protein_a / 100;
+        }
+        if ($request->id_bahan_2 != 0) {
+            $kebutuhan_protein_b  = $request->jumlah_bahan_2 + $request->jumlah_bahan_2 * $buffer / 100;
+            $penyusutan_protein_b = $request->penyusutan_2;
+            $kebutuhan_matang_b = $kebutuhan_protein_b - $request->penyusutan_2 * $kebutuhan_protein_b / 100;
+        }
+        $data_bahan = TbMasterBahan::find($request->id_bahan_1);
+        if ($data_bahan->satuan_bahan == 1) {
+            $tilting = 20;
+            $jumlah_tilting = $request->kebutuhan_mentah_input / $tilting;
+        } else {
+            $tilting = 20000;
+            $jumlah_tilting = $request->kebutuhan_mentah_input * 100 / $tilting;
+        }
+
+        DB::table('tb_rumus_perhitungan_protein')->where('id_menu', $request->id_menu)->update([
+            'kebutuhan_protein_a' => $kebutuhan_protein_a,
+            'kebutuhan_protein_b' => $kebutuhan_protein_b,
+            'penyusutan_protein_a' => $penyusutan_protein_a,
+            'penyusutan_protein_b' => $penyusutan_protein_b,
+            'kebutuhan_matang_a' => $kebutuhan_matang_a,
+            'kebutuhan_matang_b' => $kebutuhan_matang_b,
+            'kebutuhan_matang_realisasi' => $request->kebutuhan_matang_realisasi_input,
+            'kebutuhan_total_mentah' => $request->kebutuhan_mentah_input + $request->kebutuhan_mentah_input * $buffer /100,
+            'kapasitas_tilting' => 20,
+            'jumlah_masak' => $jumlah_tilting,
+
+            'status' => 2,
+
+        ]);
+        $jumlah_box_rencana = $jumlah_tilting;
+        if($request->jumlah_box_rencana)
+        {
+            $jumlah_box_rencana = $request->jumlah_box_rencana;
+        }
+
+        $data_rumus_protein = DB::table('tb_rumus_perhitungan_protein')->where('id_menu', $request->id_menu)->first();
+        $data_menu = Menu::where('id', $request->id_menu)->first();
+        $data_protein = MenuBahan::where('menu_id', $data_menu->protein)->get();
+        $data_bahan_utama = MenuBahan::where('menu_id', $data_menu->protein)->where('status_bahan_baku', 1)->first();
+        $data_bahan_utama = TbMasterBahan::find($data_bahan_utama->bahan_id);
+
+        foreach ($data_protein as $row) {
+
+            $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                ->first() ?? 0;
+            $data_bahan = TbMasterBahan::find($row->bahan_id);
+            //$data_bahan = MenuBahan::where('menu_id', $data_menu->protein)->where('bahan_id', $row->bahan_id)->first();
+            $satuan = 1;
+            $kebutuhan_mentah = $request->kebutuhan_mentah_input;
+
+            $jumlah_box = 1;
+            $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                ->first();
+            $keterangan = $keterangan->spesifikasi ?? '-';
+            if ($row->status_bahan_baku == 1) {
+                if ($data_bahan->satuan_bahan == 36 || $data_bahan_utama->satuan_bahan == 40 || $data_bahan_utama->satuan_bahan == 32) {
+                    $satuan = 36;
+                    $kebutuhan_protein_a    = $data_rumus_protein->kebutuhan_protein_a;
+                    $kebutuhan_protein_b    = $data_rumus_protein->kebutuhan_protein_b;
+                }
+                else if ( $data_bahan_utama->satuan_bahan == 32) {
+                    $satuan = 32;
+                    $kebutuhan_protein_a    = $data_rumus_protein->kebutuhan_protein_a;
+                    $kebutuhan_protein_b    = $data_rumus_protein->kebutuhan_protein_b;
+                }
+                 else {
+                    $satuan = 25;
+                }
+                $jumlah_box = ($kebutuhan_protein_a + $kebutuhan_protein_a* $buffer / 100) / $jumlah_tilting;
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->protein,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_protein_a + $kebutuhan_protein_a * $buffer / 100),
+                    'bumbu'         => 0,
+                    'harga'         => $harga->harga_bahan ?? 0,
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_protein_a + $kebutuhan_protein_a * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_rencana,
+                    'id_satuan'     => $satuan,
+                    'id_kontrak'     => ($harga->id ?? 0),
+                    'keterangan'    => $keterangan
+
+                ]);
+            } else if ($row->status_bahan_baku == 2) {
+                if ($data_bahan->satuan_bahan == 36 || $data_bahan_utama->satuan_bahan == 40) {
+                    $satuan = 36;
+                    $kebutuhan_protein_a    = $data_rumus_protein->kebutuhan_protein_a;
+                    $kebutuhan_protein_b    = $data_rumus_protein->kebutuhan_protein_b;
+                } else {
+                    $satuan = 25;
+                }
+                $jumlah_box = ($kebutuhan_protein_a + $kebutuhan_protein_a * $buffer / 100) / $jumlah_tilting;
+
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->protein,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => ($kebutuhan_protein_b + $kebutuhan_protein_b * $buffer / 100),
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * ($kebutuhan_protein_b + $kebutuhan_protein_b * $buffer / 100),
+                    'jumlah_box'    => $jumlah_box_rencana,
+                    'id_satuan'     => $satuan,
+                    'id_kontrak'     => $harga->id ?? 0,
+                    'keterangan'    => $keterangan
+
+                ]);
+            } else {
+                $data_perhitungan_bumbu = PerhitunganBumbu::where('id_menu_bahan', $row->id)->first();
+                $pengali = $data_perhitungan_bumbu->pengali ?? 10;
+                $pembagi = $data_perhitungan_bumbu->pembagi ?? 115;
+                $kebutuhan_mentah       = $kebutuhan_mentah * 100;
+                $jumlah_kebutuhan = $kebutuhan_mentah / $pembagi * $pengali;
+                if (!$data_bahan) {
+                    $jumlah_kebutuhan = 9999;
+
+                    $satuan_bahan = 1;
+                } else {
+                    $jumlah_kebutuhan = $jumlah_kebutuhan;
+                    if ($data_bahan->satuan_bahan == 1) {
+                        $satuan_bahan = 1;
+                    } else if ($data_bahan->satuan_bahan == 27) {
+                        $satuan_bahan = 27;
+                    } else if ($data_bahan->satuan_bahan == 23) {
+                        $satuan_bahan = 23;
+                    } else if ($data_bahan->satuan_bahan == 32) {
+                        $satuan_bahan = 32;
+                    } else {
+                        $satuan_bahan = 1;
+                    }
+                }
+                $nama_satuan = TbSatuan::find($satuan_bahan);
+                if ($satuan_bahan == 1 || $satuan_bahan == 27) 
+                    {
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->protein,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $jumlah_kebutuhan,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0) / 1000 * $jumlah_kebutuhan,
+                        'jumlah_box'    => $jumlah_box,
+                        'id_satuan'     => $satuan_bahan ?? 0,
+                        //'id_satuan'     => $data_bahan->id_satuan ?? 0,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'    => $keterangan
+
+                    ]);
+                }else{
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->protein,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $jumlah_kebutuhan,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0)  * $jumlah_kebutuhan,
+                        'jumlah_box'    => $jumlah_box,
+                        'id_satuan'     => $satuan_bahan ?? 0,
+                        //'id_satuan'     => $data_bahan->id_satuan ?? 0,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'    => $keterangan
+
+                    ]);
+                }
+                
+            }
+        }
+
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Lauk berhasil disimpan.');
+    }
+
+    public function dt_protein_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        /*if ($data->status_pengajuan == 'pending') {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan',
+                    'tb_rincian_menu_temp.id_satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->protein)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'rincian_menu_harian.id',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.total_harga',
+                    'tb_satuan.satuan',
+                    'rincian_menu_harian.id_satuan'
+                )
+                ->where('rincian_menu_harian.id_resep', $data->protein)
+                ->where('rincian_menu_harian.id_menu_harian', $id_menu)
+                ->get();
+        }*/
+        $table = DB::table('tb_rincian_menu_temp')
+            ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_rincian_menu_temp.id_satuan', '=', 'tb_satuan.id')
+            ->select(
+                'tb_master_bahan.bahan',
+
+                'tb_rincian_menu_temp.id',
+                'tb_rincian_menu_temp.jumlah',
+                'tb_rincian_menu_temp.harga',
+                'tb_rincian_menu_temp.total_harga',
+                'tb_rincian_menu_temp.keterangan',
+                'tb_rincian_menu_temp.jumlah_box',
+                'tb_satuan.satuan',
+                'tb_rincian_menu_temp.id_satuan'
+            )
+            ->where('tb_rincian_menu_temp.id_resep', $data->protein)
+            ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+            ->get();
+
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                $data_satuan = TbSatuan::find($row->id_satuan);
+                $satuan = $data_satuan->satuan;
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                if ($row->bahan == 'beras') {
+                    return number_format($row->jumlah, 0, '', '.') . ' kg';
+                } else {
+                    return number_format($row->jumlah, 0, '', '.') . ' ' .  $satuan;
+                }
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_harga', function ($row) {
+                return '<input type="number" class="form-control jumlah_harga" data-id="' . $row->id . '" value="' . $row->harga . '"> <button class="btn btn-success btn-sm update-jumlah-harga" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_jumlah_box', function ($row) {
+                return '<input type="number" class="form-control jumlah_box" data-id="' . $row->id . '" value="' . $row->jumlah_box . '"> <button class="btn btn-success btn-sm update-jumlah-box" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_keterangan', function ($row) {
+                return '<input type="text" class="form-control jumlah_keterangan" data-id="' . $row->id . '" value="' . $row->keterangan . '"> <button class="btn btn-success btn-sm update-jumlah-keterangan" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar', 'input_keterangan', 'input_jumlah_box', 'input_harga'])
+            ->make(true);
+    }
+
+    public function storeBuah(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            'id_buah' => 'required|integer',
+
+        ]);
+
+        // 2️⃣ Update kolom 'karbohidrat' pada tabel tb_menu sesuai ID menu
+        DB::table('tb_menu')
+            ->where('id', $request->id_menu)
+            ->update([
+                'buah' => $request->id_buah,
+            ]);
+
+        // 3️⃣ Hitung jumlah penerima kategori A dan B dari histori menu
+        $jumlah_siswa_a = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_a');
+
+        $jumlah_siswa_b = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_b');
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+        // 4️⃣ Ambil input porsi A dan B
+        $buah_porsi_a = $request->porsi_a;
+        $buah_porsi_b = $request->porsi_b;
+        $kebutuhan_total_matang = $jumlah_siswa_b * $buah_porsi_b + $jumlah_siswa_a * $buah_porsi_a;
+        $kebutuhan_total_matang = $kebutuhan_total_matang + $kebutuhan_total_matang * $buffer / 100;
+
+        DB::table('tb_rumus_perhitungan_buah')->insert([
+            'id_menu' => $request->id_menu,
+            'buah_porsi_a' => $buah_porsi_a,
+            'buah_porsi_b' => $buah_porsi_b,
+            'kebutuhan_total_matang' => $kebutuhan_total_matang,
+            'kebutuhan_buah_a'  => $kebutuhan_total_matang,
+            'kebutuhan_buah_b'      => 0,
+            'penyusutan_buah_a'     => 0,
+            'penyusutan_buah_b'     => 0,
+            'kebutuhan_matang_a'    => $kebutuhan_total_matang,
+            'kebutuhan_matang_b'    => $kebutuhan_total_matang,
+            'kebutuhan_matang_realisasi'    => $kebutuhan_total_matang,
+            'kebutuhan_total_mentah'    => $kebutuhan_total_matang,
+            'kapasitas_tilting'    => 0,
+            'jumlah_masak'    => 1,
+
+            'status' => 1,
+
+        ]);
+        $data_rumus_buah = DB::table('tb_rumus_perhitungan_buah')->where('id_menu', $request->id_menu)->first();
+        $data_menu = Menu::where('id', $request->id_menu)->first();
+        $data_buah = MenuBahan::where('menu_id', $data_menu->buah)->get();
+        
+        foreach ($data_buah as $row) {
+
+            $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                ->first() ?? 0;
+            $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                ->first();
+            $keterangan = $keterangan->spesifikasi ?? '-';
+            DB::table('tb_rincian_menu_temp')->insert([
+                'id_menu' => $request->id_menu,
+                'id_resep'      => $data_menu->buah,
+                'id_bahan'      => $row->bahan_id,
+                'jumlah'        => $kebutuhan_total_matang ,
+                'bumbu'         => 0,
+                'harga'         => ($harga->harga_bahan ?? 0),
+                'jumlah_box'    => $kebutuhan_total_matang / 100,
+                'total_harga'   => ($harga->harga_bahan ?? 0) * $kebutuhan_total_matang,
+                'id_satuan'     => 22,
+                'id_kontrak'     => $harga->id ?? 0,
+                'keterangan'     => $keterangan
+            ]);
+        }
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Buah berhasil disimpan.');
+    }
+
+    public function dt_buah_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        /*if ($data->status_pengajuan == 'pending') {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->buah)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'rincian_menu_harian.id',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.total_harga',
+                    'tb_satuan.satuan'
+                )
+                ->where('rincian_menu_harian.id_resep', $data->buah)
+                ->where('rincian_menu_harian.id_menu_harian', $id_menu)
+                ->get();
+        }*/
+        $table = DB::table('tb_rincian_menu_temp')
+            ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_rincian_menu_temp.id_satuan', '=', 'tb_satuan.id')
+            ->select(
+                'tb_master_bahan.bahan',
+
+                'tb_rincian_menu_temp.id',
+                'tb_rincian_menu_temp.jumlah',
+                'tb_rincian_menu_temp.harga',
+                'tb_rincian_menu_temp.total_harga',
+                'tb_rincian_menu_temp.keterangan',
+                'tb_rincian_menu_temp.jumlah_box',
+                'tb_satuan.satuan',
+                'tb_rincian_menu_temp.id_satuan'
+            )
+            ->where('tb_rincian_menu_temp.id_resep', $data->buah)
+            ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+            ->get();
+
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                $data_satuan = TbSatuan::find($row->id_satuan);
+                $satuan = $data_satuan->satuan;
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                if ($row->bahan == 'beras') {
+                    return number_format($row->jumlah, 0, '', '.') . ' kg';
+                } else {
+                    return number_format($row->jumlah, 0, '', '.') . ' ' .  $satuan;
+                }
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_harga', function ($row) {
+                return '<input type="number" class="form-control jumlah_harga" data-id="' . $row->id . '" value="' . $row->harga . '"> <button class="btn btn-success btn-sm update-jumlah-harga" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_jumlah_box', function ($row) {
+                return '<input type="number" class="form-control jumlah_box" data-id="' . $row->id . '" value="' . $row->jumlah_box . '"> <button class="btn btn-success btn-sm update-jumlah-box" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_keterangan', function ($row) {
+                return '<input type="text" class="form-control jumlah_keterangan" data-id="' . $row->id . '" value="' . $row->keterangan . '"> <button class="btn btn-success btn-sm update-jumlah-keterangan" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar', 'input_keterangan', 'input_jumlah_box', 'input_harga'])
+            ->make(true);
+    }
+
+    public function delete_buah_temp($id)
+    {
+        // 1️⃣ Ambil data menu berdasarkan ID
+        $data = Menu::find($id);
+
+
+        // 3️⃣ Hapus data dari tabel tb_rumus_perhitungan_karbo
+        // yang id_menu-nya = $id
+        DB::table('tb_rumus_perhitungan_buah')
+            ->where('id_menu', $id)
+            ->delete();
+
+        DB::table('tb_rincian_menu_temp')->where('id_menu', $id)->where('id_resep', $data->buah)
+            ->delete();
+
+        // 4️⃣ Update kolom karbohidrat di tb_menu menjadi NULL
+        DB::table('tb_menu')
+            ->where('id', $id)
+            ->update(['buah' => null]);
+
+        // 5️⃣ Redirect kembali ke halaman rincian bahan dengan pesan sukses
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $id])
+            ->with('success', 'Buah berhasil dihapus.');
+    }
+
+
+
+    public function storeSuplemen(Request $request)
+    {
+        // 1️⃣ Validasi input request (metode validateRequest adalah custom)
+        $request->validate([
+            'id_menu' => 'required',
+            'id_suplemen' => 'required|integer',
+
+        ]);
+
+        // 2️⃣ Update kolom 'karbohidrat' pada tabel tb_menu sesuai ID menu
+        DB::table('tb_menu')
+            ->where('id', $request->id_menu)
+            ->update([
+                'susu' => $request->id_suplemen,
+            ]);
+
+        // 3️⃣ Hitung jumlah penerima kategori A dan B dari histori menu
+        $jumlah_siswa_a = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_a');
+
+        $jumlah_siswa_b = DB::table('rincian_sekolah')
+            ->where('id_menu_harian', $request->id_menu)
+            ->sum('jumlah_penerima_b');
+
+        // 4️⃣ Ambil input porsi A dan B
+        $buffer = Buffer::first();
+        $buffer = $buffer->buffer_menu;
+
+        $suplemen_porsi_a = $request->porsi_a;
+        $suplemen_porsi_b = $request->porsi_b;
+        $kebutuhan_total_matang = $jumlah_siswa_b * $suplemen_porsi_b + $jumlah_siswa_a * $suplemen_porsi_a;
+        $kebutuhan_total_matang = $kebutuhan_total_matang + $kebutuhan_total_matang * $buffer / 100;
+
+        DB::table('tb_rumus_perhitungan_suplemen')->insert([
+            'id_menu' => $request->id_menu,
+            'suplemen_porsi_a' => $suplemen_porsi_a,
+            'suplemen_porsi_b' => $suplemen_porsi_b,
+            'kebutuhan_total_matang' => $kebutuhan_total_matang,
+            'kebutuhan_suplemen_a'  => $kebutuhan_total_matang,
+            'kebutuhan_suplemen_b'      => 0,
+            'penyusutan_suplemen_a'     => 0,
+            'penyusutan_suplemen_b'     => 0,
+            'kebutuhan_matang_a'    => $kebutuhan_total_matang,
+            'kebutuhan_matang_b'    => $kebutuhan_total_matang,
+            'kebutuhan_matang_realisasi'    => $kebutuhan_total_matang,
+            'kebutuhan_total_mentah'    => $kebutuhan_total_matang,
+            'kapasitas_tilting'    => 0,
+            'jumlah_masak'    => 1,
+
+            'status' => 1,
+
+        ]);
+        $data_rumus_suplemen = DB::table('tb_rumus_perhitungan_suplemen')->where('id_menu', $request->id_menu)->first();
+        $data_menu = Menu::where('id', $request->id_menu)->first();
+        $data_suplemen = MenuBahan::where('menu_id', $data_menu->susu)->get();
+        
+        foreach ($data_suplemen as $row) {
+            $bahan = TbMasterBahan::find($row->bahan_id);
+            $harga = DB::table('tb_rincian_kontrak')->where('id_bahan', $row->bahan_id)
+                ->where('status',  1)->orderByDesc('id') // ambil yang terbaru berdasarkan id
+                ->first() ?? 0;
+            $keterangan = DB::table('tb_spesifikasi_bahan')->where('id_bahan', $row->bahan_id)
+                ->first();
+
+            $keterangan = $keterangan->spesifikasi ?? '-';
+            if ($row->status_bahan_baku == 1) 
+                {
+                if($bahan->satuan_bahan == 1 )   
+                {
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->susu,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $kebutuhan_total_matang / 1000,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0) * $kebutuhan_total_matang  / 1000,
+                        'jumlah_box'    => 1,
+                        'id_satuan'     => 25,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'     => $keterangan
+
+                    ]);
+                }else{
+                    DB::table('tb_rincian_menu_temp')->insert([
+                        'id_menu' => $request->id_menu,
+                        'id_resep'      => $data_menu->susu,
+                        'id_bahan'      => $row->bahan_id,
+                        'jumlah'        => $kebutuhan_total_matang,
+                        'bumbu'         => 0,
+                        'harga'         => ($harga->harga_bahan ?? 0),
+                        'total_harga'   => ($harga->harga_bahan ?? 0) * $kebutuhan_total_matang,
+                        'jumlah_box'    => $kebutuhan_total_matang / 100,
+                        'id_satuan'     => $bahan->satuan_bahan,
+                        'id_kontrak'     => $harga->id ?? 0,
+                        'keterangan'     => $keterangan
+
+                    ]);
+                }
+                
+                }else{
+                DB::table('tb_rincian_menu_temp')->insert([
+                    'id_menu' => $request->id_menu,
+                    'id_resep'      => $data_menu->susu,
+                    'id_bahan'      => $row->bahan_id,
+                    'jumlah'        => $row->jumlah,
+                    'bumbu'         => 0,
+                    'harga'         => ($harga->harga_bahan ?? 0),
+                    'total_harga'   => ($harga->harga_bahan ?? 0) * $row->jumlah / 1000,
+                    'jumlah_box'    => 1,
+                    'id_satuan'     => $bahan->satuan_bahan,
+                    'id_kontrak'     => $harga->id ?? 0,
+                    'keterangan'     => $keterangan
+
+                ]);
+                }
+            
+        }
+        // 11️⃣ Redirect kembali dengan pesan sukses
+        return redirect()->route('rincian_bahan', ['idmenu' => $request->id_menu])
+            ->with('success', 'Suplemen berhasil disimpan.');
+    }
+
+    public function dt_suplemen_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        /*if ($data->status_pengajuan == 'pending') {
+            $table = DB::table('tb_rincian_menu_temp')
+                ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'tb_rincian_menu_temp.id',
+                    'tb_rincian_menu_temp.jumlah',
+                    'tb_rincian_menu_temp.harga',
+                    'tb_rincian_menu_temp.total_harga',
+                    'tb_satuan.satuan'
+                )
+                ->where('tb_rincian_menu_temp.id_resep', $data->susu)
+                ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'rincian_menu_harian.id',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.total_harga',
+                    'tb_satuan.satuan'
+                )
+                ->where('rincian_menu_harian.id_resep', $data->susu)
+                ->where('rincian_menu_harian.id_menu_harian', $id_menu)
+                ->get();
+        }*/
+        $table = DB::table('tb_rincian_menu_temp')
+            ->join('tb_master_bahan', 'tb_rincian_menu_temp.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_rincian_menu_temp.id_satuan', '=', 'tb_satuan.id')
+            ->select(
+                'tb_master_bahan.bahan',
+
+                'tb_rincian_menu_temp.id',
+                'tb_rincian_menu_temp.jumlah',
+                'tb_rincian_menu_temp.harga',
+                'tb_rincian_menu_temp.total_harga',
+                'tb_rincian_menu_temp.keterangan',
+                'tb_rincian_menu_temp.jumlah_box',
+                'tb_satuan.satuan',
+                'tb_rincian_menu_temp.id_satuan'
+            )
+            ->where('tb_rincian_menu_temp.id_resep', $data->susu)
+            ->where('tb_rincian_menu_temp.id_menu', $id_menu)
+            ->get();
+
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                $data_satuan = TbSatuan::find($row->id_satuan);
+                $satuan = $data_satuan->satuan;
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+                if ($row->bahan == 'beras') {
+                    return number_format($row->jumlah, 0, '', '.') . ' kg';
+                } else {
+                    return number_format($row->jumlah, 0, '', '.') . ' ' .  $satuan;
+                }
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_harga', function ($row) {
+                return '<input type="number" class="form-control jumlah_harga" data-id="' . $row->id . '" value="' . $row->harga . '"> <button class="btn btn-success btn-sm update-jumlah-harga" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_jumlah_box', function ($row) {
+                return '<input type="number" class="form-control jumlah_box" data-id="' . $row->id . '" value="' . $row->jumlah_box . '"> <button class="btn btn-success btn-sm update-jumlah-box" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->addColumn('input_keterangan', function ($row) {
+                return '<input type="text" class="form-control jumlah_keterangan" data-id="' . $row->id . '" value="' . $row->keterangan . '"> <button class="btn btn-success btn-sm update-jumlah-keterangan" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar', 'input_keterangan', 'input_jumlah_box', 'input_harga'])
+            ->make(true);
+    }
+
+    public function delete_suplemen_temp($id)
+    {
+        // 1️⃣ Ambil data menu berdasarkan ID
+        $data = Menu::find($id);
+
+
+        // 3️⃣ Hapus data dari tabel tb_rumus_perhitungan_karbo
+        // yang id_menu-nya = $id
+        DB::table('tb_rumus_perhitungan_suplemen')
+            ->where('id_menu', $id)
+            ->delete();
+
+        DB::table('tb_rincian_menu_temp')->where('id_menu', $id)->where('id_resep', $data->susu)
+            ->delete();
+
+        // 4️⃣ Update kolom karbohidrat di tb_menu menjadi NULL
+        DB::table('tb_menu')
+            ->where('id', $id)
+            ->update(['susu' => null]);
+
+        // 5️⃣ Redirect kembali ke halaman rincian bahan dengan pesan sukses
+        return redirect()
+            ->route('rincian_bahan', ['idmenu' => $id])
+            ->with('success', 'Suplemen berhasil dihapus.');
+    }
+
+    public function publish_rincian_menu($id)
+    {
+        $id_menu_harian = $id;
+
+        // Ambil semua data dari temp
+        $dataTemp = DB::table('tb_rincian_menu_temp')->where('id_menu', $id)->get();
+        rincian_menu_harian::where('id_menu_harian', $id_menu_harian)->delete();
+        Menu::where('id', $id_menu_harian)->update([
+            'status_pengajuan' => 'pending'
+        ]);
+
+        foreach ($dataTemp as $item) {
+            // Cek apakah data dengan kombinasi yang sama sudah ada
+            $nama_bahan = TbMasterBahan::find($item->id_bahan);
+
+            $existing = rincian_menu_harian::where('id_menu_harian', $id_menu_harian)
+                ->where('id_resep', $item->id_resep)
+                ->where('id_bahan', $item->id_bahan)
+                ->first();
+            if ($existing) {
+                // Jika ada, update datanya
+                $existing->update([
+                    'jumlah'       => $item->jumlah,
+                    'bumbu'        => $item->bumbu,
+                    'harga'        => $item->harga,
+                    'total_harga'  => $item->total_harga,
+                    'id_kontrak'  => $item->id_kontrak,
+                    'id_satuan'  => $item->id_satuan,
+                    'jumlah_box'  => $item->jumlah_box,
+                    'keterangan'  => $item->keterangan,
+                ]);
+            } else {
+                // Jika tidak ada, insert baru
+                rincian_menu_harian::create([
+                    'id_menu_harian' => $id_menu_harian,
+                    'id_resep'       => $item->id_resep,
+                    'id_bahan'       => $item->id_bahan,
+                    'jumlah'         => $item->jumlah ,
+                    'bumbu'          => $item->bumbu,
+                    'harga'          => $item->harga,
+                    'total_harga'    => $item->total_harga ,
+                    'id_kontrak'     => $item->id_kontrak,
+                    'id_satuan'      => $item->id_satuan,
+                    'jumlah_box'     => $item->jumlah_box, // per loop jadi 1 box
+                    'keterangan'     => $item->keterangan,
+                ]);
+                /*
+                if($nama_bahan->bahan == 'Beras Medium' || $nama_bahan->bahan == 'Beras Premium')
+                {
+                    $jumlah_total = $item->jumlah;
+                    $paket36kg = floor($jumlah_total / 36);
+                    $paket25kg = 0;
+                    $paket5kg = 0;
+                    $paket1kg = 0;
+                    if($paket36kg>0)
+                    {
+                        $paket25kg = $paket36kg * 1;
+                        $paket5kg = $paket36kg * 2;
+                        $paket1kg = $paket36kg *1 ;
+                        $jumlah_total = $jumlah_total - $paket36kg * 36;
+
+                        $paket25kg_sisa = floor($jumlah_total / 25);
+                        $jumlah_total = $jumlah_total - $paket25kg_sisa * 25;
+                        $paket5kg_sisa =  floor($jumlah_total / 5);
+                        $paket1kg_sisa = $jumlah_total - $paket5kg_sisa * 5;
+                        
+                        $paket25kg = $paket36kg * 1 + $paket25kg_sisa;
+                        $paket5kg = $paket36kg * 2 + $paket5kg_sisa;
+                        $paket1kg = $paket36kg * 1 + $paket1kg_sisa;
+                    }else{
+                        $paket25kg = floor($jumlah_total / 25);
+                        $jumlah_total = $jumlah_total - $paket25kg * 25;
+                        $paket5kg =  floor($jumlah_total / 5);
+                        $paket1kg = $jumlah_total - $paket5kg*5;
+
+                    }
+
+                    // jumlah yang 25 kg
+                    for ($i = 0; $i < $paket25kg; $i++) {
+                        rincian_menu_harian::create([
+                            'id_menu_harian' => $id_menu_harian,
+                            'id_resep'       => $item->id_resep,
+                            'id_bahan'       => $item->id_bahan,
+                            'jumlah'         => 25,
+                            'bumbu'          => $item->bumbu,
+                            'harga'          => $item->harga,
+                            'total_harga'    => $item->total_harga / 25,
+                            'id_kontrak'     => $item->id_kontrak,
+                            'id_satuan'      => $item->id_satuan,
+                            'jumlah_box'     => 1, // per loop jadi 1 box
+                            'keterangan'     => $item->keterangan,
+                        ]);
+                    }
+                    // jumlah yang 5 kg
+                    for ($i = 0; $i < $paket5kg; $i++) {
+                        rincian_menu_harian::create([
+                            'id_menu_harian' => $id_menu_harian,
+                            'id_resep'       => $item->id_resep,
+                            'id_bahan'       => $item->id_bahan,
+                            'jumlah'         => 5,
+                            'bumbu'          => $item->bumbu,
+                            'harga'          => $item->harga,
+                            'total_harga'    => $item->total_harga / 5,
+                            'id_kontrak'     => $item->id_kontrak,
+                            'id_satuan'      => $item->id_satuan,
+                            'jumlah_box'     => 1, // per loop jadi 1 box
+                            'keterangan'     => $item->keterangan,
+                        ]);
+                    }
+                    // jumlah yang 1 kg
+                    for ($i = 0; $i < $paket1kg; $i++) {
+                        rincian_menu_harian::create([
+                            'id_menu_harian' => $id_menu_harian,
+                            'id_resep'       => $item->id_resep,
+                            'id_bahan'       => $item->id_bahan,
+                            'jumlah'         => 1,
+                            'bumbu'          => $item->bumbu,
+                            'harga'          => $item->harga,
+                            'total_harga'    => $item->total_harga / 1,
+                            'id_kontrak'     => $item->id_kontrak,
+                            'id_satuan'      => $item->id_satuan,
+                            'jumlah_box'     => 1, // per loop jadi 1 box
+                            'keterangan'     => $item->keterangan,
+                        ]);
+                    }
+
+                    
+                }else{
+                    
+                    for ($i = 0; $i < $item->jumlah_box; $i++) {
+                        rincian_menu_harian::create([
+                            'id_menu_harian' => $id_menu_harian,
+                            'id_resep'       => $item->id_resep,
+                            'id_bahan'       => $item->id_bahan,
+                            'jumlah'         => $item->jumlah / $item->jumlah_box,
+                            'bumbu'          => $item->bumbu,
+                            'harga'          => $item->harga,
+                            'total_harga'    => $item->total_harga / $item->jumlah_box,
+                            'id_kontrak'     => $item->id_kontrak,
+                            'id_satuan'      => $item->id_satuan,
+                            'jumlah_box'     => 1, // per loop jadi 1 box
+                            'keterangan'     => $item->keterangan,
+                        ]);
+                    }
+                }*/
+                
+            }
+        }
+
+        return redirect()->route('rincian_bahan', ['idmenu' => $id])->with('success', 'Data berhasil disalin ke menu harian.');
+    }
+
+    public function dt_bumbu_temp($id_menu)
+    {
+        // Ambil data Menu berdasarkan id_menu
+        $data = Menu::where('id', $id_menu)->first();
+
+        // Query rincian bahan resep karbohidrat
+        if ($data->status_pengajuan == 'pending') {
+            $table = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'rincian_menu_harian.id',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.bumbu',
+                    'rincian_menu_harian.total_harga',
+                    'tb_satuan.satuan'
+                )
+                //->where('rincian_menu_harian.id_resep', $data->susu)
+                ->where('rincian_menu_harian.bumbu', 1)
+                ->where('rincian_menu_harian.id_menu_harian', $id_menu)
+                ->get();
+        } else {
+            $table = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->select(
+                    'tb_master_bahan.bahan',
+
+                    'rincian_menu_harian.id',
+                    'rincian_menu_harian.jumlah',
+                    'rincian_menu_harian.harga',
+                    'rincian_menu_harian.bumbu',
+                    'rincian_menu_harian.total_harga',
+                    'tb_satuan.satuan'
+                )
+                //->where('rincian_menu_harian.id_resep', $data->susu)
+                ->where('rincian_menu_harian.bumbu', 1)
+                ->where('rincian_menu_harian.id_menu_harian', $id_menu)
+                ->get();
+        }
+
+
+        // Return data untuk DataTables
+        return DataTables::of($table)
+            ->addIndexColumn()
+
+            // Kolom jumlah bahan dengan format satuan
+            ->editColumn('jumlah_bahan', function ($row) {
+                return number_format($row->jumlah, 0, '', '.') . ' ' . $row->satuan;
+            })
+
+            // Kolom harga satuan
+            ->addColumn('harga_satuan', function ($row) {
+                return 'Rp. ' . number_format($row->harga, 0, '', '.');
+            })
+
+            // Kolom total harga dibayar
+            ->addColumn('total_dibayar', function ($row) {
+                return 'Rp. ' . number_format($row->total_harga, 0, '', '.');
+            })
+            ->addColumn('action', function ($row) {
+                return '<input type="number" class="form-control jumlah" data-id="' . $row->id . '" value="' . $row->jumlah . '"> <button class="btn btn-success btn-sm update-jumlah" data-id="' . $row->id . '">Update</button>';
+
+                //return number_format($row->jumlah, 0, ',', '.'); // Format: 1.234,56
+            })
+
+            ->rawColumns(['jumlah_bahan', 'action', 'harga_satuan', 'total_dibayar'])
+            ->make(true);
+    }
+}

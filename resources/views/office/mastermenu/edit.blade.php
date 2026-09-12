@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<!--
+This is a starter template page. Use this page to start your new project from
+scratch. This page gets rid of all links and provides the needed markup only.
+-->
+<html lang="en">
+<head>
+    <title>{{ $header }}</title>
+    @include('Template.head')
+</head>
+<body class="hold-transition sidebar-mini">
+    <div class="wrapper">
+
+        <!-- Navbar -->
+        @include('Template.navbar')
+        <!-- /.navbar -->
+
+        <!-- Main Sidebar Container -->
+        @include('Template.left-sidebar')
+
+        <!-- Content Wrapper. Contains page content -->
+        <div class="content-wrapper">
+            <!-- Content Header (Page header) -->
+            <div class="content-header">
+                <div class="container-fluid">
+                    <div class="row mb-2">
+                        <div class="col-sm-6">
+                            <h1 class="m-0 text-dark" id="currentTime">Starter Page</h1>
+                        </div><!-- /.col -->
+                        
+                    </div><!-- /.row -->
+                </div><!-- /.container-fluid -->
+            </div>
+            <!-- /.content-header -->
+
+            <!-- Main content -->
+            <section class="content">
+                <div class="container-fluid">
+                    <div class="row">
+                    <div class="col-12">
+                        <div class="card">
+                        <div class="card-header">
+                            <h1 >{{ $header }}</h1>
+                        </div>
+                        <!-- /.card-header -->
+                        <div class="card-body">
+                            <form action="{{ route('mastermenu.update', $Menu->id) }}" method="POST" enctype="multipart/form-data">
+                        
+                                @csrf
+                                @method('PUT')
+
+                                
+
+                                <div class="form-group mb-3">
+                                    <label class="font-weight-bold">Nama Menu</label>
+                                    <input type="text" class="form-control @error('menu') is-invalid @enderror" name="menu" value="{{ old('menu', $Menu->menu) }}" placeholder="menu">
+                                
+                                    <!-- error message untuk name -->
+                                    @error('menu')
+                                        <div class="alert alert-danger mt-2">
+                                            {{ $message }}
+                                        </div>
+                                    @enderror
+                                </div>
+
+                                <div class="form-group mb-3">
+                                    <label class="font-weight-bold">Golongan</label>
+                                    <select class="form-control @error('golongan') is-invalid @enderror" name="golongan" id="golongan">
+                                        <option value="">-- Pilih Golongan --</option>
+                                        <option value="umum" @if(old('golongan', $Menu->golongan ?? '') === 'umum') selected @endif>Umum</option>
+                                        <option value="pax_a" @if(old('golongan', $Menu->golongan ?? '') === 'pax_a') selected @endif>Pax A</option>
+                                        <option value="pax_b" @if(old('golongan', $Menu->golongan ?? '') === 'pax_b') selected @endif>Pax B</option>
+                                        <option value="busui_bumil" @if(old('golongan', $Menu->golongan ?? '') === 'busui_bumil') selected @endif>Busui/Bumil</option>
+                                        <option value="balita" @if(old('golongan', $Menu->golongan ?? '') === 'balita') selected @endif>Balita</option>
+                                        <option value="baduta" @if(old('golongan', $Menu->golongan ?? '') === 'baduta') selected @endif>Baduta</option>
+                                    </select>
+                                    @error('golongan')
+                                        <div class="alert alert-danger mt-2">
+                                            {{ $message }}
+                                        </div>
+                                    @enderror
+                                </div>
+
+                                
+                                <div class="form-group mb-3">
+                                    <label class="font-weight-bold">Nama Pengaju</label>
+                                    <input type="text" class="form-control @error('nama_pengaju') is-invalid @enderror" name="nama_pengaju" value="{{ old('menu', $Menu->nama_pengaju) }}" placeholder="nama_pengaju">
+                                
+                                    
+                                    @error('nama_pengaju')
+                                    <div class="alert alert-danger mt-2">{{ $message }}</div>
+                                    @enderror
+                                </div>
+
+                                <div class="form-group mb-3">
+                                        <label class="font-weight-bold">Tanggal Pengajuan</label>
+                                    <input type="date" class="form-control @error('tanggal_pengajuan') is-invalid @enderror" name="tanggal_pengajuan" value="{{ old('tanggal_pengajuan', date('Y-m-d')) }}">
+                                        @error('tanggal_pengajuan')
+                                        <div class="alert alert-danger mt-2">{{ $message }}</div>
+                                        @enderror
+                                </div>
+
+                                <div class="form-group mb-3">
+                                            <label class="font-weight-bold">Tanggal Kirim</label>
+                                            <input type="date" class="form-control @error('tanggal_kirim') is-invalid @enderror" name="tanggal_kirim" value="{{ old('tanggal_kirim', $Menu->tanggal_kirim) }}">
+                                            @error('tanggal_kirim')
+                                            <div class="alert alert-danger mt-2">{{ $message }}</div>
+                                            @enderror
+                                </div>
+                                
+                                <button type="submit" class="btn btn-md btn-primary me-3">UPDATE</button>
+                                <button type="reset" class="btn btn-md btn-warning">RESET</button>
+
+                            </form> 
+                        </div>
+                        <!-- /.card-body -->
+                        </div>
+                        <!-- /.card -->
+
+                       >
+                    </div>
+                    <!-- /.col -->
+                    </div>
+                    <!-- /.row -->
+                </div>
+                <!-- /.container-fluid -->
+                </section>
+        </div>
+        <!-- /.content-wrapper -->
+
+        <!-- Control Sidebar -->
+        <aside class="control-sidebar control-sidebar-dark">
+            <!-- Control sidebar content goes here -->
+            <div class="p-3">
+                <h5>Title</h5>
+                <p>Sidebar content</p>
+            </div>
+        </aside>
+        <!-- /.control-sidebar -->
+
+        <!-- Main Footer -->
+        @include('Template.footer')
+    </div>
+    <!-- ./wrapper -->
+
+    <!-- REQUIRED SCRIPTS -->
+  
+    @include('Template.script')
+    <script>
+        $(document).ready(function() {
+            $('#karbohidrat').select2({
+                placeholder: "Pilih karbohidrat",
+                allowClear: true
+            });
+            $('#protein').select2({
+                placeholder: "Pilih protein",
+                allowClear: true
+            });
+            $('#sayur').select2({
+                placeholder: "Pilih sayur",
+                allowClear: true
+            });
+            $('#buah').select2({
+                placeholder: "Pilih buah",
+                allowClear: true
+            });
+            $('#susu').select2({
+                placeholder: "Pilih susu",
+                allowClear: true
+            });
+
+        });
+    </script>
+    <!-- jQuery -->
+</body>
+</html>

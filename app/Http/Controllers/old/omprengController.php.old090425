@@ -1,0 +1,140 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Models\TbOmpreng;
+use DataTables;
+use Illuminate\Support\Facades\DB;
+use App\Models\tbOmprengTransaksi;
+use Illuminate\Support\Facades\Auth;
+
+class omprengController extends Controller
+{
+    //
+    public function v_ompreng()
+    {
+        $header = "ompreng";
+        $jumlah_rantang = TbOmpreng::where('jenis', 'Rantang')->count();
+        $jumlah_ompreng = TbOmpreng::where('jenis', 'Ompreng')->count();
+        return view('ompreng.ompreng', compact('header', 'jumlah_rantang', 'jumlah_ompreng'));
+    }
+
+    public function dt_ompreng(Request $request)
+    {
+        $table = TbOmpreng::where('jenis', 'Ompreng')->get();
+        return DataTables::of($table)
+            ->addIndexColumn()
+            ->addColumn('action', function ($table) {
+                return '<a href="#" class="btn btn-xs btn-primary">Edit</a>';
+            })
+            ->rawColumns(['action'])
+            ->make(true);
+    }
+
+    public function dt_rantang(Request $request)
+    {
+        $table = TbOmpreng::where('jenis', 'Rantang')->get();
+        return DataTables::of($table)
+            ->addIndexColumn()
+            ->addColumn('action', function ($table) {
+                return '<a href="#" class="btn btn-xs btn-primary">Edit</a>';
+            })
+            ->rawColumns(['action'])
+            ->make(true);
+    }
+
+    private function hitungOmprengKeluar()
+    {
+        $total_ompreng_keluar = tbOmprengTransaksi::where('status', 0)->count();
+        return $total_ompreng_keluar;
+    }
+
+    public function v_formOmprengMasuk()
+    {
+        $header = "Scan Ompreng Kotor Kembali";
+        $total_ompreng_keluar = $this->hitungOmprengKeluar();
+        return view('ompreng.formOmprengMasuk', compact('header', 'total_ompreng_keluar'));
+    }
+
+    public function dt_omprengKeluar()
+    {
+        $table = tbOmprengTransaksi::where('status', 0)->get();
+        return DataTables::of($table)
+            ->addIndexColumn()
+            ->editColumn('status', function ($table) {
+                return $table->status == 0 ? 'Keluar' : $table->status;
+            })
+            ->addColumn('action', function ($table) {
+                return '<a href="#" class="btn btn-xs btn-primary">Edit</a>';
+            })
+            ->rawColumns(['action'])
+            ->make(true);
+    }
+
+    public function ajax_scanQR(Request $request)
+    {
+        //return $request;
+        $kodeQR = $request->kodeQR;
+        //return $kodeQR;
+        if (strpos($kodeQR, 'RT_') === 0) {
+            $jumlah_ompreng = $this->hitungOmprengKeluar();
+            return response()->json([
+                'success' => false,
+                'jenis' => 'RT',
+                'jumlah_ompreng' => $jumlah_ompreng,
+                'type' => 'warning',
+                'message' => $kodeQR.' bukan kode ompreng'
+            ]);
+        } elseif (strpos($kodeQR, 'OP_') === 0) {
+            $kode_ompreng = $request->kodeQR;
+            //$user_id = Auth::user()->id;
+            //return $request;
+            $omprengTransaksi = tbOmprengTransaksi::where('kode_ompreng', $kode_ompreng)
+            ->where('status', '0')
+            ->get();
+            
+            if ($omprengTransaksi->isNotEmpty()) {
+                DB::transaction(function () use ($kode_ompreng, $omprengTransaksi) {
+                    try {
+                        foreach ($omprengTransaksi as $transaksi) {
+                            $transaksi->update([
+                                'status' => 1,
+                                'tanggal_masuk' => now()
+                            ]);
+                        }
+                        TbOmpreng::where('kode_ompreng', $kode_ompreng)->update([
+                            'status' => 'Didapur'
+                        ]);
+                    } catch (\Exception $e) {
+                        DB::rollBack();
+                        throw $e;
+                    }
+                });
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ompreng '.$kode_ompreng.' sudah masuk',
+                    'type'  => 'error'
+                ]);
+            }
+            
+
+            $jumlah_ompreng = $this->hitungOmprengKeluar();
+            return response()->json([
+                'success' => true,
+                'jenis' => 'OP',
+                'jumlah_ompreng' => $jumlah_ompreng,
+                'type' => 'success',
+                'message' => 'Ompreng '.$kode_ompreng.' berhasil discan'
+            ]);          
+            
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid QR code format',
+                'type'  => 'error'
+            ]);
+        }
+    }
+}

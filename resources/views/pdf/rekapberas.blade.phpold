@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Rekap Steamer</title>
+    <style>
+        body { font-family: sans-serif; font-size: 12px; }
+        h3, p { margin: 0; padding: 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+        td, th { border: 1px solid #000; padding: 4px; text-align: center; }
+        .no-border td { border: none; text-align: left; }
+        .packing th, .packing td { background-color: #fcd5b4; }
+        .right { float: right; width: 40%; }
+        .left { float: left; width: 58%; }
+        .clear { clear: both; }
+
+  
+    </style>
+</head>
+
+<body>
+    <h3>YAYASAN BINA BANGSA SEMARANG</h3>
+    <p>SATUAN PELAYANAN PEMENUHAN GIZI</p>
+    <p>Perhitungan Memasak Nasi dengan Steamer 2 Pintu (12 Tray)</p>
+    <p>Prepared by : Joko Priyo</p>
+    <p>Printed on : {{ date('d-m-Y H:i:s') }}</p>
+
+        <table class="no-border" style="width: 100%;">
+            <tr>
+                <td>Jumlah Pax (dgn Buffer 1%)</td>
+                <td class="highlight">: {{ $pax }} pax</td>
+            </tr>
+            <tr>
+                <td>Pemorsian A</td>
+                <td class="highlight">: {{ $pemorsian_a }} gram</td>
+                <td>Pemorsian B</td>
+                <td class="highlight">: {{ $pemorsian_b }} gram</td>
+                <td>Pemorsian Total</td>
+                <td class="highlight">: {{ $pemorsian }} gram</td>
+            </tr>
+        </table>
+
+        <table class="no-border">
+            <tr><td>Kebutuhan Beras</td><td>: {{ $kebutuhan['beras'] }} kg</td></tr>
+            <tr><td>Kebutuhan Tray</td><td>: {{ $kebutuhan['tray'] }} Tray</td></tr>
+            <tr><td>Kebutuhan Steamer</td><td>: {{ $kebutuhan['steamer'] }} Steamer (2 Pintu = 24 Tray)</td></tr>
+            <tr><td>Kebutuhan Pintu Steamer</td><td>: {{ $kebutuhan['pintu'] }} Pintu (1 Pintu = 12 Tray)</td></tr>
+            <tr><td>Kebutuhan Air Total</td><td>: {{ $kebutuhan['air'] }} Liter</td></tr>
+        </table>
+
+        <table class="no-border">
+            <tr><td>Hasil Produksi</td><td>: {{ $produksi['kg'] }} kg</td></tr>
+            <tr><td>Hasil Produksi</td><td>: {{ number_format($produksi['gram'], 0, ',', '.') }} gram</td></tr>
+        </table>
+
+        <p><strong>Hitungan Cuci Beras:</strong> 1 kali pencucian (max 72kg)</p>
+            <table style="width: 40%;">
+                <tr><th>Urutan Pencucian</th><th>Jumlah (kg)</th></tr>
+                @foreach($pencucian as $index => $val)
+                <tr>
+                    <td>{{ ['Pertama','Kedua','Ketiga','Keempat','Kelima'][$index] }}</td>
+                    <td>{{ $val }} kg</td>
+                </tr>
+                @endforeach
+            </table>
+            
+        <div class="clear"></div>
+        <table style="width: 100%; margin-top: 20px;">
+        <tr>
+            <td style="width: 50%;">
+            <h4>Packing Beras (Kg)</h4>
+                <table class="packing" style="width: 100%;">
+                    @foreach($packing as $i => $row)
+                    <tr>
+                        <td>{{ $row[0] }}</td>
+                        <td>{{ $row[1] }}</td>
+                        <td>{{ $row[2] }}</td>
+                    </tr>
+                    @endforeach
+                </table>
+            
+            <td style="width: 50%;">
+            <h4>Tabel Pintu Steamer</h4>
+                <table style="width: 100%;">
+                    <tr><th>Tray</th></tr>
+                    <tr><td>1</td></tr>
+                    <tr><td>2</td></tr>
+                    <tr><td>3</td></tr>
+                    <tr><td>4</td></tr>
+                </table>
+            </td>
+            </tr>
+        </table>
+
+        <table style="width: 100%; margin-top: 60px; text-align: center;">
+            <tr>
+                <td><strong>Dibuat Oleh:</strong></td>
+                <td><strong>Disetujui Oleh:</strong></td>
+            </tr>
+            <tr>
+                <td style="padding-top: 60px;"><u>Asisten Dapur</u></td>
+                <td style="padding-top: 60px;"><u>Kepala Dapur</u></td>
+            </tr>
+        </table>
+
+</body>
+
+</html>

@@ -1,0 +1,13 @@
+POST http://10.8.0.14:8001/api/menu-hari-ini
+Content-Type: application/json
+Accept: application/json
+
+{
+    "nomor_dapur": "tester",
+    "tanggal": "2025-03-12",
+    "karbohidrat": "Nasi",
+    "protein": "Ayam Goreng",
+    "sayur": "Lodeh",
+    "buah": "Melon",
+    "susu": "Susu Sapi"
+}

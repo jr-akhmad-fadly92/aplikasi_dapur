@@ -1,0 +1,1850 @@
+<?php
+
+namespace App\Http\Controllers\Office;
+
+
+use App\Http\Controllers\Controller;
+use App\Models\BoxBahanBaku;
+use App\Models\Buffer;
+use Illuminate\Http\Request;
+use Yajra\DataTables\Facades\DataTables;
+use Illuminate\Support\Facades\Validator;
+//import return type View
+use Illuminate\View\View;
+//import return type redirectResponse
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
+
+use App\Models\TbPo;
+use App\Models\TbPoBahan;
+use App\Models\Supplier;
+use App\Models\TbKontrak;
+use App\Models\Menu;
+use App\Models\rincian_menu_harian;
+use App\Models\TbMasterBahan;
+use App\Models\TbSatuan;
+use App\Models\DataDapur;
+use App\Models\MenuBahan;
+use App\Models\Resep;
+use App\Models\rincian_sekolah;
+use App\Models\SpesifikasiBahan;
+use App\Models\tb_karyawan;
+use App\Models\TbBantuBahanPo;
+use App\Models\TbRincianKontrak;
+use App\Models\TbRincianMenuTemp;
+use Svg\Tag\Rect;
+
+class PoController extends Controller
+{
+    //
+    public function index()
+    {
+        // Menentukan judul halaman
+        $header = "Dashboard PO";
+
+        // Cek apakah request dilakukan via AJAX
+        if (request()->ajax()) {
+            // Query data dari tabel tb_po dengan join ke tb_kontrak dan tb_supplier
+            $resep = TbPo::join('tb_kontrak', 'tb_po.id_kontrak', '=', 'tb_kontrak.id')
+                ->join('tb_supplier', 'tb_kontrak.id_supplier', '=', 'tb_supplier.id')
+                ->select([
+                    'tb_kontrak.*',
+                    'tb_supplier.nama_supplier',
+                    'tb_po.nomor_po',
+                    'tb_po.id as id_po',
+                    'tb_po.status_po',
+                    'tb_po.tanggal_po',
+                    'tb_po.tanggal_approve',
+                    'tb_po.manual',
+                ])->orderBy('tb_po.id', 'desc') // Urutkan berdasarkan tb_po.id dari terbesar (terbaru) ke terkecil
+                ->limit(40) // Ambil hanya 40 data terakhir
+                ->get();
+
+            // Mengembalikan data dalam format DataTables
+            return DataTables::of($resep)
+                ->addIndexColumn() // Menambahkan kolom indeks otomatis
+                ->addColumn('tanggal_po_dibuat', function ($row) {
+                    // Format tanggal dalam bahasa Indonesia
+                    //setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian', 'id_ID');
+                    //return strftime('%A, %d-%m-%Y', strtotime($row->tanggal_po));
+		    // Set locale Indonesia untuk Carbon
+                    \Carbon\Carbon::setLocale('id');
+
+                     //return Carbon::parse($row->tanggal_po)->translatedFormat('l, d-m-Y');
+                     setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian', 'id_ID');
+                      //  return strftime('%A, %d-%m-%Y', strtotime($row->tanggal_po));
+                      return Carbon::parse($row->tanggal_po)->translatedFormat('l, d F Y');
+                })
+                ->addColumn('tanggal_acc', function ($row) {
+                    // Menampilkan tanggal approve jika ada, jika tidak tampilkan "-"
+                    if (!empty($row->tanggal_approve)) {
+                        setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian', 'id_ID');
+                        //return strftime('%A, %d-%m-%Y', strtotime($row->tanggal_approve));
+                        return Carbon::parse($row->tanggal_approve)->translatedFormat('l, d F Y');
+                    }
+                    return '-';
+                })
+                ->addColumn('action', function ($row) {
+                    // Tombol untuk update status dan unduh PDF
+                    if (auth()->user()->level == "kepala_dapur" || auth()->user()->level == "backoffice") {
+                        if ($row->status_po != 'acc' && $row->status_po != 'close') {
+                            if ($row->manual == 1) {
+                                return '<button class="btn btn-success btn-sm update-po" data-id="' . $row->id_po . '">Update status</button>
+                            <a href="' . route('pengajuan_po.edit_bahan_baku', $row->id_po) . '" class="btn btn-info btn-sm" data-id="' . $row->id . '">Edit</a>
+                            <form action="' . route('pengajuan_po.destroy', $row->id_po) . '" method="POST" style="display:inline;">
+                                ' . method_field('DELETE') . '
+                                ' . csrf_field() . '
+                                <button type="submit" class="btn btn-danger btn-sm" data-id="' . $row->id_po . '">Delete</button>
+                            </form>
+                            <a href="' . route('pdf_pengajuan_po_manual', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF1</a>
+                           <a href="' . route('pdf_pengajuan_po_tanpa_harga', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF2</a>';
+                            } else {
+                                return '<button class="btn btn-success btn-sm update-po" data-id="' . $row->id_po . '">Update status</button>
+                             <a href="' . route('pengajuan_po.edit_bahan_baku', $row->id_po) . '" class="btn btn-info btn-sm" data-id="' . $row->id . '">Edit</a>
+                            <form action="' . route('pengajuan_po.destroy', $row->id_po) . '" method="POST" style="display:inline;">
+                                ' . method_field('DELETE') . '
+                                ' . csrf_field() . '
+                                <button type="submit" class="btn btn-danger btn-sm" data-id="' . $row->id_po . '">Delete</button>
+                            </form>
+                            <a href="' . route('pdf_pengajuan_po', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF1</a>
+                           <a href="' . route('pdf_pengajuan_po_tanpa_harga', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF2</a>';
+                            }
+                        } else {
+                            if ($row->manual == 1) {
+                                return '<a href="' . route('pdf_pengajuan_po_manual', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF1</a>
+                           <a href="' . route('pdf_pengajuan_po_tanpa_harga', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF2</a>';
+                            } else {
+                                return '<a href="' . route('pdf_pengajuan_po', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF1</a>
+                           <a href="' . route('pdf_pengajuan_po_tanpa_harga', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF2</a>';
+                            }
+                        }
+                    } else {
+                        if ($row->manual == 1) {
+                            return '
+                        <form action="' . route('pengajuan_po.destroy', $row->id_po) . '" method="POST" style="display:inline;">
+                            ' . method_field('DELETE') . '
+                            ' . csrf_field() . '
+                            <button type="submit" class="btn btn-danger btn-sm" data-id="' . $row->id_po . '">Delete</button>
+                        </form>
+                        <a href="' . route('pdf_pengajuan_po_manual', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF</a>';
+                        } else {
+                            return '
+                        <form action="' . route('pengajuan_po.destroy', $row->id_po) . '" method="POST" style="display:inline;">
+                            ' . method_field('DELETE') . '
+                            ' . csrf_field() . '
+                            <button type="submit" class="btn btn-danger btn-sm" data-id="' . $row->id_po . '">Delete</button>
+                        </form>
+                        <a href="' . route('pdf_pengajuan_po', $row->id_po) . '" 
+                           class="edit btn btn-info btn-sm" 
+                           data-id="' . $row->id . '">PDF</a>';
+                        }
+                    }
+                })
+                ->rawColumns(['action', 'tanggal_po_dibuat']) // Tandai kolom yang berisi HTML
+                ->make(true);
+        }
+
+        // Jika bukan request AJAX, tampilkan halaman dengan view
+        return view('office/PO.index', compact('header'));
+    }
+
+
+    public function create()
+    {
+        $id = '';
+        $header = 'Buat Pengajuan PO';
+        $karyawan = tb_karyawan::all();
+        $datadapur = DataDapur::first();
+        $jumlah_kontrak = TbPo::count();
+        if ($jumlah_kontrak < 9) {
+            $jumlah_kontrak = '00' . ($jumlah_kontrak + 1);
+        } else if ($jumlah_kontrak < 99) {
+            $jumlah_kontrak = '0' . ($jumlah_kontrak + 1);
+        }
+        $bulan_PO = Carbon::now()->format('Ym'); // Format YYYY-MM untuk filter
+        $nomor_PO = 'PO-' . $datadapur->nomor_dapur . '-' . $bulan_PO . $jumlah_kontrak;
+        $Supplier = Supplier::select('id', 'nama_supplier')->get();
+        $kontrak = TbKontrak::join('tb_supplier', 'tb_kontrak.id_supplier', 'tb_supplier.id')
+            ->select('tb_kontrak.id', 'tb_supplier.nama_supplier')->get();
+        return view('office/PO.create', compact('header', 'karyawan', 'nomor_PO', 'kontrak', 'id'));
+    }
+
+    public function create_po($id)
+    {
+        $header = 'Buat Pengajuan PO';
+        $karyawan = tb_karyawan::all();
+        $jumlah_kontrak = TbPo::count();
+        if ($jumlah_kontrak < 9) {
+            $jumlah_kontrak = '00' . ($jumlah_kontrak + 1);
+        } else if ($jumlah_kontrak < 99) {
+            $jumlah_kontrak = '0' . ($jumlah_kontrak + 1);
+        }
+        $dapur = DataDapur::first();
+        $bulan_PO   = Carbon::now()->format('Ym'); // Format YYYY-MM untuk filter
+        $nomor_PO   = 'PO-Y0' . $dapur->nomor_dapur . '-' . $bulan_PO . $jumlah_kontrak;
+        $Supplier   = Supplier::select('id', 'nama_supplier')->get();
+        $kontrak    = Supplier::join('tb_kontrak', 'tb_supplier.id', 'tb_kontrak.id_supplier')
+            ->join('tb_rincian_kontrak', 'tb_kontrak.id', 'tb_rincian_kontrak.id_kontrak')
+            ->join('rincian_menu_harian', 'tb_rincian_kontrak.id_bahan', 'rincian_menu_harian.id_bahan')
+            ->join('tb_menu', 'rincian_menu_harian.id_menu_harian', 'tb_menu.id')
+            ->where('tb_menu.id', $id)
+            ->whereDate('tb_kontrak.akhir_kontrak', '>=', now()->toDateString())
+            ->select('tb_kontrak.id', 'tb_supplier.nama_supplier', 'tb_kontrak.id_supplier')
+            ->distinct()
+            ->get();
+        return view('office/PO.create', compact('header', 'karyawan', 'nomor_PO', 'kontrak', 'id'));
+    }
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'nomor_po'                     => 'required|min:1',
+            'supplier'                     => 'required',
+            'tanggal_pengajuan'            => 'required',
+            // 'id_karyawan'                  => 'required',
+        ]);
+        $cek = TbPo::where('nomor_po', $request->nomor_po)->count();
+        if ($cek > 0) {
+            return redirect()->route('pengajuan_po.create')->with(['error' => 'Data Sudah Pernah Masuk!']);
+        }
+        $id = $request->id_menu;
+        TbPo::create([
+            'nomor_po'                  => $request->nomor_po,
+            'id_kontrak'                => $request->supplier,
+            'tanggal_po'                => $request->tanggal_pengajuan,
+            'tanggal_pengajuan'         => $request->tanggal_pengajuan,
+            'status_po'                 => 'draft',
+            'id_karyawan'               => 0,
+        ]);
+        $po = TbPo::where('nomor_po', $request->nomor_po)->first();
+        $menu = Menu::find($request->id_menu);
+        $rincian_bahan = rincian_menu_harian::where('id_menu_harian', $request->id_menu)->get();
+        /*foreach ($rincian_bahan as $data) {
+            TbPoBahan::create([
+                'id_po'              => $po->id,
+                'id_bahan'           => $data->id_bahan,
+                'jumlah_bahan'       => $data->jumlah,
+                'satuan'             => $data->id_satuan ?? '0', // Pastikan tidak null
+                'jumlah_po'          => str_replace('.', '', $data->total_harga),
+                //'jumlah_po'          => 0,
+                'tanggal_kedatangan' => date('Y-m-d H:i:s', strtotime($menu->tanggal_kirim . ' -1 day 11:00')),
+                'tanggal_digunakan'  => $menu->tanggal_kirim,
+                'id_rincian_bahan'   => $data->id,
+                'buffer'             => 0,
+                'keterangan'         => $data->keterangan,
+                'jumlah_box'         => $data->jumlah_box,
+                //'id_rincian_kontrak' => $request->merek_bahan,
+                'id_rincian_kontrak' => $data->id_kontrak,
+                'id_kontrak' => 13
+            ]);
+        }*/
+        return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $id, 'id_kontrak' => $po->id_kontrak]);
+    }
+
+    public function store_po(Request $request)
+    {
+        $request->validate([
+            'nomor_po'                     => 'required|min:1',
+            'supplier'                     => 'required',
+            'tanggal_pengajuan'            => 'required',
+            //  'id_karyawan'                  => 'required',
+        ]);
+        $cek = TbPo::where('nomor_po', $request->nomor_po)->count();
+        if ($cek > 0) {
+            return redirect()->route('pengajuan_po.create')->with(['error' => 'Data Sudah Pernah Masuk!']);
+        }
+        $id = $request->id_menu;
+        TbPo::create([
+            'nomor_po'                  => $request->nomor_po,
+            'id_kontrak'                => $request->supplier,
+            'tanggal_po'                => $request->tanggal_pengajuan,
+            'tanggal_pengajuan'         => $request->tanggal_pengajuan,
+            'status_po'                 => 'draft',
+            'id_karyawan'               => 0,
+        ]);
+        $po = TbPo::where('nomor_po', $request->nomor_po)->first();
+        $menu = Menu::find($request->id_menu);
+        $rincian_bahan = rincian_menu_harian::where('id_menu_harian', $request->id_menu)->get();
+        /*foreach($rincian_bahan as $data)
+        {
+            TbPoBahan::create([
+                'id_po'              => $po->id,
+                'id_bahan'           => $data->id_bahan,
+                'jumlah_bahan'       => $data->jumlah,
+                'satuan'             => $data->id_satuan ?? '0', // Pastikan tidak null
+                'jumlah_po'          => str_replace('.', '', $data->total_harga),
+                //'jumlah_po'          => 0,
+                'tanggal_kedatangan' => date('Y-m-d', strtotime($menu->tanggal_kirim. ' -1 days')), // Default 2 hari sebelum tanggal digunakan,
+                'tanggal_digunakan'  => $menu->tanggal_kirim,
+                'id_rincian_bahan'   => $data->id,
+                'buffer'             => 0,
+                'keterangan'         => $data->keterangan,
+                'jumlah_box'         => $data->jumlah_box,
+                //'id_rincian_kontrak' => $request->merek_bahan,
+                'id_rincian_kontrak' => $data->id_kontrak,
+                'id_kontrak' => 13
+            ]);
+            
+            
+        }*/
+        return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $id, 'id_kontrak' => $po->id_kontrak]);
+    }
+
+    public function rincian_pengajuan_po($id, $id_menu, $id_kontrak)
+    {
+        $po         = TbPo::where('id', $id)->first();
+        $menu       = Menu::where('id', $id_menu)->first();
+        $header = 'Rincian Pengajuan PO ';
+        $data_bahan_koperasi = DB::table('tb_rincian_kontrak as rk')
+            ->join('tb_master_bahan as mb', 'mb.id', '=', 'rk.id_bahan')
+            ->join('rincian_menu_harian as rmh', 'rmh.id_bahan', '=', 'mb.id')
+            ->join('tb_satuan as satuan', 'satuan.id', '=', 'rk.satuan_bahan')
+            ->where('rk.status', 1)
+            ->where('rmh.id_menu_harian', $id_menu)
+            ->select('rk.id', 'rk.id_bahan', 'mb.bahan', 'rk.merek_bahan', 'rk.harga_bahan', 'satuan.satuan')
+            ->get();
+
+        if (request()->ajax()) {
+            
+
+        $menu = menu::join('rincian_menu_harian', 'tb_menu.id', 'rincian_menu_harian.id_menu_harian')
+                //->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', 'tb_satuan.id')
+                ->where('tb_master_bahan.bahan', '!=', 'air') // Tambah baris ini
+                ->where('tb_menu.id', $id_menu)
+                ->select([
+                    'tb_menu.id',
+                    'tb_menu.tanggal_kirim',
+                    'rincian_menu_harian.id_resep',
+                    // 'tb_resep.nama_resep',
+                    'tb_master_bahan.bahan',
+                    'tb_master_bahan.id as idbahan',
+
+                    'rincian_menu_harian.id as id_rincian_menu',
+                    'rincian_menu_harian.jumlah',
+                    'tb_satuan.satuan',
+                ])
+
+                ->get();
+
+
+            return DataTables::of($menu)
+                ->addIndexColumn() // Menambah index
+
+                ->addColumn('nama_resep', function ($row) {
+                    setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian', 'id_ID'); // Set bahasa Indonesia
+                    if ($row->id_resep == 0) {
+                        return 'tambahan (' . strftime('%A, %d-%m-%Y', strtotime($row->tanggal_kirim)) . ')';
+                    } else {
+                        $nama_resep = Resep::find($row->id_resep);
+                        return $nama_resep->nama_resep . '  (' . strftime('%A, %d-%m-%Y', strtotime($row->tanggal_kirim)) . ')';
+                    }
+
+                    // return $row->nama_resep . ' (' . strftime('%A, %d-%m-%Y', strtotime($row->tanggal_kirim)) . ')';
+                })
+
+                ->addColumn('nama_resep_dan_tanggal', function ($row) {
+                    setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian', 'id_ID'); // Set bahasa Indonesia
+                    return $row->nama_resep . ' (' . strftime('%A, %d-%m-%Y', strtotime($row->tanggal_kirim)) . ')';
+                })
+                ->addColumn('bahan_dan_total', function ($row) {
+                    //konversi gram - kg 
+                    $total =  $row->jumlah;
+                    $satuannya = $row->satuan;
+                    if ($row->satuan == 'Gram') {
+                        $total = $row->jumlah;
+                        // $satuannya = 'Kg';
+                    }
+                    return $row->bahan . ' | ' .  number_format($total, 0, ',', '.') . ' ' . $satuannya;
+                })
+                ->addColumn('terpenuhi', function ($row) use ($id) {
+
+                   
+                    $satuannya = $row->satuan;
+                    $data       = TbPoBahan::where('id_rincian_bahan', $row->id_rincian_menu)
+                        ->sum('jumlah_bahan');
+                    return number_format($data, 0, ',', '.') . ' ' . $satuannya ?? '-';
+                })
+                ->addColumn('input_jumlah', function ($row) {
+                    return '<input type="number" class="form-control jumlah" " data-id="' . $row->id . '" value="' . $row->jumlah_penerima . '">';
+                })
+                ->addColumn('action', function ($row) use ($id, $po, $id_kontrak) {
+                    $data       = TbPoBahan::where('id_po', $id)->where('id_bahan', $row->idbahan)
+                        ->where('tanggal_digunakan', $row->tanggal_kirim)->where('id_rincian_bahan', $row->id_rincian_menu)->sum('jumlah_bahan');
+                    $datapo      = TbPoBahan::where('id_po', $id)->where('id_bahan', $row->idbahan)
+                        ->where('tanggal_digunakan', $row->tanggal_kirim)->where('id_rincian_bahan', $row->id_rincian_menu)->first();
+
+
+                    $cek        = $row->jumlah - $data;
+                    if ($cek == 0) {
+                        return 'Rp. ' . number_format($datapo->jumlah_po ?? 0, 0, ',', '.');
+                    } else {
+                        $total = $cek;
+                        $satuannya = $row->satuan;
+                        $rincian_kontrak = TbRincianKontrak::join('tb_satuan', 'tb_rincian_kontrak.satuan_bahan', 'tb_satuan.id')
+                            ->where('tb_rincian_kontrak.id_kontrak', $id_kontrak)
+                            ->where('id_bahan', $row->idbahan)->select('tb_satuan.satuan')->first();
+                        if ($row->satuan == 'Gram' && $rincian_kontrak->satuan == "Kg") {
+                            $total = $cek / 1000;
+                        } else if ($row->satuan == 'ml' && $rincian_kontrak->satuan == "liter") {
+                            $total = $cek / 1000;
+                        }
+
+                        $total_bayar    =  $total;
+                        //$total_bayar    = 0;
+                        $cek_data = TbPoBahan::where('id_rincian_bahan', $row->id_rincian_menu)->first();
+                        if (empty($cek_data)) {
+                            $keterangan = SpesifikasiBahan::where('id_bahan', $row->idbahan)->first();
+                            if ($keterangan) {
+                                $keterangan = $keterangan->spesifikasi;
+                            } else {
+                                $keterangan = '-';
+                            }
+                            
+                            $buffer         = Buffer::first();
+                            $jumlah_buffer  = $cek * $buffer->buffer_menu / 100;
+                            $jumlah_box = 1;
+                            $cek_box = BoxBahanBaku::where('id_bahan', $row->idbahan)->first();
+                            if ($cek_box) {
+                                $jumlah_box = ($cek + $jumlah_buffer) /  $cek_box->isi_per_box;
+                                $jumlah_box = ceil($jumlah_box);
+                            }
+                            //=================================================================
+                            $data_baru = rincian_menu_harian::find($row->id_rincian_menu)??0;
+                            $total_bayar = $data_baru->total_harga ?? $total_bayar;
+                            $cek        = $data_baru->jumlah ?? $cek ;
+                            $cek_menu = Menu::find($row->id);
+                            $jumlah_box = $data_baru->jumlah_box;
+                            $kontrak = TbRincianKontrak::find($data_baru->id_kontrak);
+                            //=================================================================
+                            /*$btn = '<button class="btn btn-sm btn-primary openModalBtn" 
+                            data-idbahan="' . $row->idbahan . '"
+                            data-jumlahbahan="' . $cek . '"
+                            data-satuan="' . $satuannya . '"
+                            data-bahan="' . $row->bahan . '"
+                            data-tanggal_digunakan="' . $row->tanggal_kirim . '"
+                            data-tanggal_kirim="' . Carbon::parse($row->tanggal_kirim)
+                            ->subDay()
+                            ->setTime(11, 0)
+                            ->format('Y-m-d\TH:i') . '"
+                            data-jumlahpo="' . $total_bayar . '" 
+                            data-rincian="' . $row->id_rincian_menu . '"
+                            data-keterangan="' . $keterangan . '"
+                            data-buffer="' . ceil($jumlah_buffer) . '"
+                            data-box="' . $jumlah_box . '"
+                            data-merek="' . $kontrak->merek_bahan . '"
+                            data-idmerek="' . $kontrak->id . '"
+                            data-harga="' . $kontrak->harga_bahan . '">
+                            Input Pengiriman
+                        </button>';*/
+                        // return '<input type="checkbox" name="bahan[]" value="' . $row->id_rincian_menu . '">';
+                        $btn = '<button class="btn btn-sm btn-primary openModalBtn" 
+                            data-idbahan="' . $row->idbahan . '"
+                            data-jumlahbahan="' . $cek . '"
+                            data-satuan="' . $satuannya . '"
+                            data-bahan="' . $row->bahan . '"
+                            data-tanggal_digunakan="' . $row->tanggal_kirim . '"
+                            data-tanggal_kirim="' . Carbon::parse($row->tanggal_kirim)
+                            ->subDay()
+                            ->setTime(11, 0)
+                            ->format('Y-m-d\TH:i') . '"
+                            data-jumlahpo="' . $total_bayar . '" 
+                            data-rincian="' . $row->id_rincian_menu . '"
+                            data-keterangan="' . $keterangan . '"
+                            data-buffer="' . ceil($jumlah_buffer) . '"
+                            data-box="' . $jumlah_box . '"
+                            data-merek="' . $kontrak->merek_bahan . '"
+                            data-idmerek="' . $kontrak->id . '"
+                            data-harga="' . $kontrak->harga_bahan . '">
+                            Input Pengiriman
+                        </button>'; 
+                           return $btn;
+                        } else {
+                            return 'Rp. ' . number_format($cek_data->jumlah_po ?? 0, 0, ',', '.') . ',-';
+                        }
+                    }
+                })
+                ->rawColumns(['action', 'nama_resep_dan_tanggal', 'nama_resep', 'bahan_dan_total', 'terpenuhi'])
+                ->make(true);
+        }
+        return view('office/PO.index_rincian_po', compact('header', 'po', 'id_menu', 'menu', 'data_bahan_koperasi'));
+    }
+
+    public function simpan_rincian_pengajuan_po(Request $request)
+    {
+        $po         = TbPo::where('id', $request->idpo)->first();
+        if (empty($request->tanggal_kirim)) {
+            return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $request->id_menu, 'id_kontrak' => $po->id_kontrak])
+                ->with(['error' => 'Isi dulu data tanggal kirim']);
+        } else if (empty($request->jumlahpo)) {
+            return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $request->id_menu, 'id_kontrak' => $po->id_kontrak])
+                ->with(['error' => 'Isi dulu data jumlah pembayaran po']);
+        }
+
+        $satuan     = TbSatuan::where('satuan', $request->satuan)->first();
+        $bahan      = TbMasterBahan::where('id', $request->idbahan)->first();
+        $cek        = TbPoBahan::where('id_po', $request->idpo)->where('id_bahan', $request->idbahan)
+        
+            ->where('tanggal_digunakan', $request->tanggal_digunakan)->count();
+        $total = menu::join('rincian_menu_harian', 'tb_menu.id', 'rincian_menu_harian.id_menu_harian')
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', 'tb_resep.id')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', 'tb_satuan.id')
+            ->join('tb_rincian_kontrak', 'rincian_menu_harian.id_bahan', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->where('rincian_menu_harian.id_bahan', $request->idbahan)
+            ->where('tb_menu.tanggal_kirim', $request->tanggal_digunakan)
+
+            ->where('tb_menu.status_pengajuan', '!=', 'rejected') // Hindari data yang reject
+            ->select([
+                'tb_menu.id',
+                'rincian_menu_harian.jumlah',
+                'rincian_menu_harian.id as id_menu'
+            ])->sum('jumlah');
+        if ($cek == 1) {
+            $data = TbPoBahan::where('id_po', $request->idpo)->where('id_bahan', $request->idbahan)
+                ->where('tanggal_digunakan', $request->tanggal_digunakan)->first();
+            $total = $total - $data->jumlah_bahan;
+
+            if ($total < $request->jumlah) {
+                return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $request->id_menu, 'id_kontrak' => $po->id_kontrak])->with(['error' => 'jumlah melebihi kuota']);
+            }
+        }
+        $data_rincian_bahan_menu = rincian_menu_harian::find($request->idrincian);
+        if ($request->idbahan == 6) {
+            $totalBerasKg = ($request->jumlah + $request->buffer) / 1000 ?? 0;
+            // Packing beras
+            $pack_utama = $totalBerasKg / 36;
+            $pack25 = floor($pack_utama) * 1;
+            $pack5 = floor($pack_utama) * 2;
+            $pack1 = floor($pack_utama) * 1;
+            $sisa = $totalBerasKg - floor($pack_utama) * 36;
+            $pack5 = floor($sisa / 5) + $pack5;
+            $pack1 = ($sisa % 5) + $pack1;
+
+            TbPoBahan::create([
+                'id_po'              => $request->idpo,
+                'id_bahan'           => $request->idbahan,
+                'jumlah_bahan'       => $request->jumlah + $request->buffer,
+                'satuan'             => $bahan->satuan_bahan ?? 'N/A', // Pastikan tidak null
+                'jumlah_po'          => str_replace('.', '', $request->jumlahpo),
+                //'jumlah_po'          => 0,
+                'tanggal_kedatangan' => $request->tanggal_kirim ?? date('Y-m-d', strtotime($request->tanggal_digunakan . ' -1 days')), // Default 2 hari sebelum tanggal digunakan,
+                'tanggal_digunakan'  => $request->tanggal_digunakan,
+                'id_rincian_bahan'   => $data_rincian_bahan_menu->id_satuan,
+                'buffer'             => $request->buffer,
+                'keterangan'         => '25kg : ' . $pack25 . ' pack | 5kg : ' . $pack5 . ' pack | 1 kg : ' . $pack1 . ' pack',
+                'jumlah_box'         => $request->box,
+                //'id_rincian_kontrak' => $request->merek_bahan,
+                'id_rincian_kontrak' => $request->idmerek,
+                'id_kontrak' => 13
+            ]);
+        } else {
+            TbPoBahan::create([
+                'id_po'              => $request->idpo,
+                'id_bahan'           => $request->idbahan,
+                'jumlah_bahan'       => $request->jumlah + $request->buffer,
+                'satuan'             => $data_rincian_bahan_menu->id_satuan ?? 'N/A', // Pastikan tidak null
+                'jumlah_po'          => str_replace('.', '', $request->jumlahpo),
+                //'jumlah_po'          => 0,
+                'tanggal_kedatangan' => $request->tanggal_kirim ?? date('Y-m-d', strtotime($request->tanggal_digunakan . ' -1 days')), // Default 2 hari sebelum tanggal digunakan,
+                'tanggal_digunakan'  => $request->tanggal_digunakan,
+                'id_rincian_bahan'   => $request->idrincian,
+                'buffer'             => $request->buffer,
+                'keterangan'         => $request->keterangan,
+                'jumlah_box'         => $request->box,
+                //'id_rincian_kontrak' => $request->merek_bahan,
+                'id_rincian_kontrak' => $request->idmerek,
+                'id_kontrak' => 13
+            ]);
+        }
+        
+
+        TbBantuBahanPo::where('id', $request->idrincian)->update([
+            'id_po'              => $request->idpo,
+            'jumlah_bahan'       => $request->jumlah,
+            'jumlah_po'          => $request->jumlahpo,
+            //'jumlah_po'          => 0,
+            'tanggal_kedatangan' => $request->tanggal_kirim ?? date('Y-m-d', strtotime($request->tanggal_digunakan . ' -1 days')), // Default 2 hari sebelum tanggal digunakan,
+            'tanggal_digunakan'  => $request->tanggal_digunakan,
+            // 'buffer'             => $request->buffer,
+            // 'keterangan'         => $request->keterangan,   
+        ]);
+
+        return redirect()->route('rincian_pengajuan_po', ['id' => $po->id, 'id_menu' => $request->id_menu, 'id_kontrak' => $po->id_kontrak]);
+    }
+
+    public function simpan_draft_pengajuan_po($id, $id_menu)
+    {
+        $po = TbPo::where('id', $id)->first();
+        #update tb po
+        TbPoBahan::where('id_po', $id)->update([
+            'id_kontrak'        => $po->id_kontrak
+        ]);
+        TbBantuBahanPo::where('id_po', $id)->update([
+            'id_kontrak'        => $po->id_kontrak
+        ]);
+        $po->update([
+            'status_po'         => 'pengajuan'
+        ]);
+        return redirect()->route('rincian_menu_po', $id_menu)->with(['success' => 'data Berhasil Disimpan']);
+    }
+
+    public function destroy($id)
+    {
+        $po = TbPo::where('id', $id)->first();
+        TbPoBahan::where('id_po', $id)->delete();
+        $po->delete();
+
+        if (!$po) {
+            return redirect()->back()->with('error', 'Data tidak ditemukan!');
+        }
+
+
+        return redirect()->back()->with('success', 'Data berhasil dihapus!');
+    }
+
+    public function pdf_pengajuan_po_lama($id)
+    {
+        $dapur      = DataDapur::first();
+        $po         = TbPo::where('id', $id)->first();
+        $kontrak    = TbKontrak::where('id', $po->id_kontrak)->first();
+        $Supplier   = Supplier::where('id', $kontrak->id_supplier)->first();
+        $rincian_po = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            //->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_rincian_kontrak', 'po_bahan.id_rincian_kontrak', 'tb_rincian_kontrak.id')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', 'satuan2.id')
+
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->where('tb_rincian_kontrak.status', 1)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                DB::raw("COALESCE(tb_rincian_kontrak.merek_bahan, '-') as merek_bahan"),
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po',
+                'po_bahan.keterangan',
+                'satuan2.satuan as satuan_kontrak',
+                'po_bahan.jumlah_box'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+        $rincian_po_cek = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            //->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_rincian_kontrak', 'po_bahan.id_rincian_kontrak', 'tb_rincian_kontrak.id')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', 'satuan2.id')
+
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->where('tb_rincian_kontrak.status', 1)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                DB::raw("COALESCE(tb_rincian_kontrak.merek_bahan, '-') as merek_bahan"),
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po',
+                'po_bahan.keterangan',
+                'satuan2.satuan as satuan_kontrak',
+                'po_bahan.jumlah_box'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->count();
+
+        if ($rincian_po_cek == 0) {
+            $rincian_po = DB::table('tb_po_bahan as po_bahan')
+                ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+                ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+                ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+                ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+                ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+                ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', 'satuan2.id')
+
+                ->where('po.id', $id)
+                ->where('tb_kontrak.id', $po->id_kontrak)
+                ->select(
+                    DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                    'bahan.bahan',
+                    'tb_rincian_kontrak.harga_bahan',
+                    'po_bahan.tanggal_kedatangan',
+                    'po_bahan.jumlah_bahan',
+                    'tb_satuan.satuan',
+                    'po_bahan.jumlah_po',
+                    'satuan2.satuan as satuan_kontrak'
+
+                )
+                ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+                ->get();
+        }
+
+
+
+        $total = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_po');
+        $totalberas = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->where('bahan.bahan', 'beras')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_bahan');
+        $totalBerasKg = $totalberas / 1000 ?? 0;
+        // Packing beras
+        /*$pack25 = floor($totalBerasKg / 25);
+        $sisa = $totalBerasKg % 25;
+
+        $pack5 = floor($sisa / 5);
+        $sisa = $sisa % 5;
+
+        $pack1 = $sisa > 0 ? 1 : 0;
+        */
+        $pack_utama = $totalBerasKg / 36;
+        $pack25 = floor($pack_utama) * 1;
+        $pack5 = floor($pack_utama) * 2;
+        $pack1 = floor($pack_utama) * 1;
+        $sisa = $totalBerasKg - floor($pack_utama) * 36;
+        $pack5 = floor($sisa / 5) + $pack5;
+        $pack1 = ($sisa % 5) + $pack1;
+
+        if ($rincian_po_cek == 0) {
+            $pdf = Pdf::loadView('office/PO.template_pengajuan_po_lama', compact(
+                'po',
+                'dapur',
+                'kontrak',
+                'Supplier',
+                'rincian_po',
+                'total',
+                'pack25',
+                'pack5',
+                'pack1',
+                'totalBerasKg'
+            ));
+
+            $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+            return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+        } else {
+            $pdf = Pdf::loadView('office/PO.template_pengajuan_po', compact(
+                'po',
+                'dapur',
+                'kontrak',
+                'Supplier',
+                'rincian_po',
+                'total',
+                'pack25',
+                'pack5',
+                'pack1',
+                'totalBerasKg'
+            ));
+
+            $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+            return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+        }
+    }
+
+    public function pdf_pengajuan_po($id)
+    {
+        $dapur      = DataDapur::first();
+        $po         = TbPo::where('id', $id)->first();
+        $kontrak    = TbKontrak::where('id', $po->id_kontrak)->first();
+        $Supplier   = Supplier::where('id', $kontrak->id_supplier)->first();
+        DB::statement(DB::raw('SET @rownum = 0'));
+        $rincian_po = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+            ->join('rincian_menu_harian', 'po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->join('tb_rincian_kontrak', 'rincian_menu_harian.id_kontrak', '=', 'tb_rincian_kontrak.id')
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', '=', 'tb_satuan.id')
+            ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', '=', 'satuan2.id')
+            ->selectRaw('
+            @rownum := @rownum + 1 AS nomor_urut,
+            bahan.bahan,
+            po_bahan.tanggal_kedatangan,
+            po_bahan.jumlah_bahan,
+            po_bahan.jumlah_po,
+            po_bahan.keterangan,
+            tb_resep.nama_resep,
+            po_bahan.jumlah_box,
+            tb_rincian_kontrak.harga_bahan,
+            COALESCE(tb_rincian_kontrak.merek_bahan, "-") AS merek_bahan,
+            tb_satuan.satuan,
+            satuan2.satuan AS satuan_kontrak
+        ')
+            ->where('po.id', $id)
+            //->where('tb_rincian_kontrak.status', 1)
+            ->get();
+        $rincian_po_cek = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            //->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_rincian_kontrak', 'po_bahan.id_rincian_kontrak', 'tb_rincian_kontrak.id')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', 'satuan2.id')
+
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->where('tb_rincian_kontrak.status', 1)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                DB::raw("COALESCE(tb_rincian_kontrak.merek_bahan, '-') as merek_bahan"),
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po',
+                'po_bahan.keterangan',
+                'satuan2.satuan as satuan_kontrak',
+                'po_bahan.jumlah_box'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->count();
+
+        if ($rincian_po_cek == 0) {
+            $rincian_po = DB::table('tb_po_bahan as po_bahan')
+                ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+                ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+                ->join('rincian_menu_harian', 'po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+                ->join('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+                ->join('tb_rincian_kontrak', 'rincian_menu_harian.id_kontrak', '=', 'tb_rincian_kontrak.id')
+                ->join('tb_satuan', 'rincian_menu_harian.id_satuan', '=', 'tb_satuan.id')
+                ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', '=', 'satuan2.id')
+                ->selectRaw('
+            @rownum := @rownum + 1 AS nomor_urut,
+            bahan.bahan,
+            po_bahan.tanggal_kedatangan,
+            po_bahan.jumlah_bahan,
+            po_bahan.jumlah_po,
+            po_bahan.keterangan,
+            po_bahan.jumlah_box,
+            tb_resep.nama_resep,
+            tb_rincian_kontrak.harga_bahan,
+            COALESCE(tb_rincian_kontrak.merek_bahan, "-") AS merek_bahan,
+            tb_satuan.satuan,
+            satuan2.satuan AS satuan_kontrak
+        ')
+                ->where('po.id', $id)
+               // ->where('tb_rincian_kontrak.status', 1)
+                ->get();
+        }
+        if(!$rincian_po)
+        {
+            $rincian_po = DB::table('tb_po_bahan as po_bahan')
+                ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+                ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+                ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+                ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+                ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+                ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', 'satuan2.id')
+
+                ->where('po.id', $id)
+                ->where('tb_kontrak.id', $po->id_kontrak)
+                ->select(
+                    DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                    'bahan.bahan',
+                    'tb_rincian_kontrak.harga_bahan',
+                    'po_bahan.tanggal_kedatangan',
+                    'po_bahan.jumlah_bahan',
+                    'tb_satuan.satuan',
+                    'po_bahan.jumlah_po',
+                    'satuan2.satuan as satuan_kontrak'
+
+                )
+                ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+                ->get();
+        }
+
+
+        $total = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_po');
+        $totalberas =
+            DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+            ->where('po.id', $id)
+            ->where('bahan.bahan', 'beras')
+            ->sum('po_bahan.jumlah_bahan');
+        $totalBerasKg = $totalberas  ?? 0;
+        // Packing beras
+        /*$pack25 = floor($totalBerasKg / 25);
+        $sisa = $totalBerasKg % 25;
+
+        $pack5 = floor($sisa / 5);
+        $sisa = $sisa % 5;
+
+        $pack1 = $sisa > 0 ? 1 : 0;
+        */
+        $pack_utama = $totalBerasKg / 36;
+        $pack25 = floor($pack_utama) * 1;
+        $pack5 = floor($pack_utama) * 2;
+        $pack1 = floor($pack_utama) * 1;
+        $sisa = $totalBerasKg - floor($pack_utama) * 36;
+        $pack5 = floor($sisa / 5) + $pack5;
+        $pack1 = ($sisa % 5) + $pack1;
+
+        if ($rincian_po_cek == 0) {
+            $pdf = Pdf::loadView('office/PO.template_pengajuan_po_lama', compact(
+                'po',
+                'dapur',
+                'kontrak',
+                'Supplier',
+                'rincian_po',
+                'total',
+                'pack25',
+                'pack5',
+                'pack1',
+                'totalBerasKg'
+            ));
+
+            $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+            return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+        } else {
+            $pdf = Pdf::loadView('office/PO.template_pengajuan_po', compact(
+                'po',
+                'dapur',
+                'kontrak',
+                'Supplier',
+                'rincian_po',
+                'total',
+                'pack25',
+                'pack5',
+                'pack1',
+                'totalBerasKg'
+            ));
+
+            $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+            return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+        }
+    }
+
+    public function pdf_pengajuan_po_manual($id)
+    {
+        $dapur      = DataDapur::first();
+        $po         = TbPo::where('id', $id)->first();
+        $kontrak    = TbKontrak::where('id', $po->id_kontrak)->first();
+        $Supplier   = Supplier::where('id', $kontrak->id_supplier)->first();
+        $rincian_po = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+
+            ->where('po.id', $id)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po',
+
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->get();
+
+        $total = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_po');
+
+        $totalberas = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->where('bahan.bahan', 'beras')
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_bahan');
+
+        $totalBerasKg = ($totalberas ?? 0) / 1000 ?? 0;
+        // Packing beras
+        $pack25 = floor($totalBerasKg / 25);
+        $sisa = $totalBerasKg % 25;
+
+        $pack5 = floor($sisa / 5);
+        $sisa = $sisa % 5;
+
+        $pack1 = $sisa > 0 ? 1 : 0;
+
+        $pdf = Pdf::loadView('office/PO.template_pengajuan_po_manual', compact(
+            'po',
+            'dapur',
+            'kontrak',
+            'Supplier',
+            'rincian_po',
+            'total',
+            'pack25',
+            'pack5',
+            'pack1',
+            'totalBerasKg'
+        ));
+
+        $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+        return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+    }
+
+    public function template()
+    {
+        return view('office/PO.template_pengajuan_po');
+    }
+
+
+    public function pilih_menu()
+    {
+
+        $header     = "List Menu Belum PO";
+        if (request()->ajax()) {
+            //$users = User::query();
+            $Menu = Menu::join('tb_resep as m_karbo', 'tb_menu.karbohidrat', '=', 'm_karbo.id')
+                ->join('tb_resep as m_protein', 'tb_menu.protein', '=', 'm_protein.id')
+                ->join('tb_resep as m_sayur', 'tb_menu.sayur', '=', 'm_sayur.id')
+                ->join('tb_resep as m_buah', 'tb_menu.buah', '=', 'm_buah.id')
+                ->join('tb_resep as m_susu', 'tb_menu.susu', '=', 'm_susu.id')
+                ->whereIn('status_pengajuan', ['pending', 'kirim po', 'approved'])
+                ->select(
+
+                    'tb_menu.*',
+                    'm_karbo.nama_resep as nama_karbohidrat',
+                    'm_protein.nama_resep as nama_protein',
+                    'm_sayur.nama_resep as nama_sayur',
+                    'm_buah.nama_resep as nama_buah',
+                    'm_susu.nama_resep as nama_susu'
+                )
+                ->latest()
+                ->get();
+
+            //$Menu = Menu::all();
+            return DataTables::of($Menu)
+                ->addIndexColumn() // Menambah index
+
+                ->addColumn('action', function ($row) {
+                    if ($row->status_pengajuan == 'pending' || $row->status_pengajuan == 'approved') {
+                        $btn = '<a href="' . route('rincian_menu_po', $row['id']) . '" class="edit btn btn-success btn-sm delete-button" id="btn-delete-post " data-id="' . $row['id'] . '" >Buat PO</a>';
+                    } else if ($row->status_pengajuan == 'kirim po') {
+                        $btn = '<a href="' . route('rincian_menu_po', $row['id']) . '" class="edit btn btn-success btn-sm delete-button" id="btn-delete-post " data-id="' . $row['id'] . '" >rincian PO</a>';
+                    }
+                    return $btn;
+                })
+                ->rawColumns(['action'])
+                ->make(true);
+        }
+        return view('office/PO.index_menu', compact('header'));
+    }
+
+    public function rincian_bahan_menu($id)
+    {
+
+        $menu       = Menu::where('id', $id)->first();
+        setlocale(LC_TIME, 'id_ID.utf8', 'Indonesian');
+        $tanggal = strftime('%A, %d %B %Y', strtotime($menu->tanggal_pengajuan));
+        $kontrak = TbKontrak::join('tb_supplier', 'tb_kontrak.id_supplier', 'tb_supplier.id')
+            ->select('tb_kontrak.id', 'tb_supplier.nama_supplier')->get();
+        $header     = "Rincian Menu " . $tanggal;
+        $data_rincian_kontrak_supplier = DB::table('rincian_menu_harian as rmh')
+            ->leftJoin('tb_rincian_kontrak as rk', function ($join) {
+                $join->on('rk.id_bahan', '=', 'rmh.id_bahan')
+                    ->where('rk.status', 1);
+            })
+            ->where('rmh.id_menu_harian', $id)
+            ->select(
+                'rmh.id',
+                'rmh.id_menu_harian',
+                'rmh.id_bahan',
+                DB::raw("CASE WHEN rk.status = 1 THEN 'bahan ada' ELSE 'bahan kosong' END AS keterangan")
+            )
+            ->get();
+        $totalKosong = DB::table('rincian_menu_harian as rmh')
+            ->leftJoin('tb_rincian_kontrak as rk', function ($join) {
+                $join->on('rk.id_bahan', '=', 'rmh.id_bahan')
+                    ->where('rk.status', 1);
+            })
+            ->where('rmh.id_menu_harian', $id)
+            ->whereNull('rk.id_bahan')
+            ->count();
+
+        if (request()->ajax()) {
+            //$users = User::query();
+            /*$data =TbBantuBahanPo::join('tb_master_bahan','tb_bantu_bahan_po.id_bahan', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_bantu_bahan_po.satuan', 'tb_satuan.id')
+                ->where('tb_bantu_bahan_po.id_menu_harian', $id)
+                ->select(
+                'tb_bantu_bahan_po.id',
+                'tb_bantu_bahan_po.jumlah',
+                'tb_bantu_bahan_po.jumlah_po',
+                'tb_bantu_bahan_po.id_resep',
+               //'tb_resep.nama_resep',
+                'tb_master_bahan.bahan',
+                'tb_satuan.satuan',
+                'tb_bantu_bahan_po.id_kontrak',
+                
+                )
+                ->get();
+           
+            $data = DB::table('rincian_menu_harian')
+                ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+                
+                ->where('rincian_menu_harian.id_menu_harian', $id)
+                ->select(
+                    'rincian_menu_harian.id',
+                    'tb_master_bahan.bahan',
+                    'tb_master_bahan.satuan_bahan',
+                    'rincian_menu_harian.id_resep',
+                    'rincian_menu_harian.id_menu_harian',
+                    'rincian_menu_harian.jumlah'
+                )
+                ->get(); */
+            $data = DB::table('rincian_menu_harian as rmh')
+                ->Join('tb_rincian_kontrak as rk', function ($join) {
+                    $join->on('rk.id_bahan', '=', 'rmh.id_bahan')
+                        ->where('rk.status', 1);
+                })
+                ->join('tb_master_bahan as mb', 'rmh.id_bahan', '=', 'mb.id')
+                ->where('rmh.id_menu_harian', $id)
+                ->select(
+                    'rmh.id',
+                    'mb.bahan',
+                    'mb.satuan_bahan',
+                    'rmh.id_resep',
+                    'rmh.id_menu_harian',
+                    'rmh.jumlah',
+                    DB::raw("CASE WHEN rk.status = 1 THEN 'bahan ada' ELSE 'bahan kosong' END AS keterangan")
+                )
+                //->groupBy('rmh.id_menu_harian')
+                ->get();
+            //$Menu = Menu::all();
+            return DataTables::of($data)
+                ->addIndexColumn() // Menambah index
+                ->addColumn('nama_resep', function ($row) {
+
+                    if ($row->id_resep == 0) {
+                        return 'tambahan';
+                    } else {
+                        $nama_resep = Resep::find($row->id_resep);
+                        return $nama_resep->nama_resep;
+                    }
+                })
+                ->addColumn('total_berat', function ($row) {
+                    // $cek_data = TbPoBahan::where('id_rincian_bahan')->first();
+                    return number_format($row->jumlah, 0, ',', '.') . '';
+                })
+                ->addColumn('satuan', function ($row) {
+                    $cek_data = TbPoBahan::where('id_rincian_bahan')->first();
+                    if ($cek_data) {
+                        $satuan = TbSatuan::find($cek_data->satuan);
+                        return $satuan->satuan;
+                    } else {
+                        $satuan = TbSatuan::find($row->satuan_bahan);
+                        return $satuan->satuan;
+                    }
+                    return number_format($row->jumlah, 0, ',', '.') . '';
+                })
+
+                ->addColumn('total_po', function ($row) {
+                    $cek_data = TbPoBahan::where('id_rincian_bahan', $row->id)->first();
+
+                    if ($cek_data) {
+                        return 'Rp. ' . number_format($cek_data->jumlah_po, 0, ',', '.');
+                    } else {
+                        return 'Rp. 0';
+                    }
+                })
+                ->addColumn('action', function ($row) {
+                    $cek_data = TbPoBahan::join('tb_po', 'tb_po_bahan.id_po', 'tb_po.id')
+                        ->where('tb_po_bahan.id_rincian_bahan', $row->id)
+                        ->select('tb_po.id_kontrak')
+                        ->first();
+
+                    if ($cek_data) {
+
+                        $data =  TbKontrak::join('tb_supplier', 'tb_kontrak.id_supplier', 'tb_supplier.id')
+                            ->where('tb_kontrak.id', $cek_data->id_kontrak)
+                            ->select('tb_kontrak.id', 'tb_supplier.nama_supplier')->first();
+                        $btn = !empty($data['id']) ?
+                            $data->nama_supplier : 'belum PO';
+                        return $btn;
+                    } else {
+                        return 'belum PO';
+                    }
+                })
+
+                ->rawColumns(['action', 'total_po', 'satuan', 'nama_resep'])
+                ->make(true);
+        }
+        return view('office/PO.rincian_menu', compact('header', 'kontrak', 'menu', 'totalKosong'));
+    }
+
+    public function input_supplier($id)
+    {
+        $header     = "Input Supplier ";
+        $pobahan = TbBantuBahanPo::where('id', $id)->first();
+
+        $kontrak = TbKontrak::join('tb_supplier', 'tb_kontrak.id_supplier', 'tb_supplier.id')
+            ->where('id_bahan', $pobahan->id_bahan)->select('tb_kontrak.id', 'tb_supplier.nama_supplier')->get();
+
+
+        return view('office/PO.create_supplier', compact('header', 'pobahan', 'kontrak'));
+    }
+
+    public function simpan_rincian_menu_po($id)
+    {
+        $po = TbPo::join('tb_bantu_bahan_po', 'tb_po.id', 'tb_bantu_bahan_po.id_po')
+            ->where('id_menu_harian', $id)->get();
+        $menu = Menu::where('id', $id)->first();
+        foreach ($po as $data) {
+            $data->update([
+                'status_po'     => 'menunggu',
+            ]);
+        }
+        $menu->update([
+            'status_pengajuan'  => 'kirim po',
+        ]);
+        return redirect()->route('pilih_menu_po')->with(['success' => 'data diajukan']);
+    }
+
+    public function updatemanualpo(Request $request)
+    {
+        $request->validate([
+            'id' => 'required',
+        ]);
+
+        $po = TbPo::find($request->id);
+        $po->status_po = 'acc';
+        $po->tanggal_approve = now()->format("Y-m-d");
+        $po->save();
+
+        return response()->json(['message' => $po->nomor_po . ' ACC !']);
+    }
+
+
+    //===============================================API==================================//
+
+    public function edit_po(string $id): View
+    {
+        // Mendefinisikan header untuk halaman
+        $header = "Edit PO";
+
+        // Mengambil data dapur berdasarkan ID (ID yang diberikan adalah 1)
+        $dapur  = DataDapur::findOrFail(1);
+
+        // Mengambil data Purchase Order (PO) berdasarkan ID PO yang diterima sebagai parameter
+        $po         = TbPo::findOrFail($id);
+        $data_po    = TbPoBahan::where('id_po', $id)->first()??0;
+        $karbohidrat         = '-';
+        $protein             = '-';
+        $sayur               = '-';
+        $buah                = '-';
+        $susu                = '-';
+        $keterangan          = $data_po->keterangan;
+        if($data_po->id_rincian_bahan)
+        {
+            $sample_rincian_menu = rincian_menu_harian::find($data_po->id_rincian_bahan);
+            $menu                = Menu::find($sample_rincian_menu->id_menu_harian);
+            $karbohidrat         = Resep::find($menu->karbohidrat)->nama_resep;
+            $protein             = Resep::find($menu->protein)->nama_resep;
+            $sayur               = Resep::find($menu->sayur)->nama_resep;
+            $buah                = Resep::find($menu->buah)->nama_resep;
+            $susu                = Resep::find($menu->susu)->nama_resep;
+        }
+        
+        // Mengatur tanggal pengajuan PO dengan format tanggal dalam bahasa Indonesia
+        $tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)
+            ->locale('id')  // Menggunakan bahasa Indonesia untuk format tanggal
+            ->isoFormat('dddd, D MMMM YYYY'); // Format tanggal: hari, tanggal bulan tahun (misal: Senin, 1 Januari 2025)
+
+        // Mengambil data kontrak yang terkait dengan PO berdasarkan ID kontrak yang ada pada PO
+        $kontrak    = TbKontrak::findOrFail($po->id_kontrak);
+
+        // Mengambil data supplier berdasarkan ID supplier yang terdapat dalam data kontrak
+        $supplier   = Supplier::findOrFail($kontrak->id_supplier);
+
+        // Merender tampilan 'edit_index_rincian_po' dan mengirimkan data yang telah diambil ke tampilan
+        return view('office/PO.edit_index_rincian_po', compact(
+            'dapur', 'po', 'tanggal_pengajuan', 'kontrak', 'supplier', 'header'
+            ,'karbohidrat','protein','sayur','buah','susu',
+            'keterangan'
+        ));
+    }
+
+
+    public function dt_bahan_edit_po(string $id)
+    {
+        // Mengambil data bahan berdasarkan ID PO
+        $table = TbPoBahan::where('id_po', $id)
+            ->get();
+
+        // Menggunakan DataTables untuk menampilkan data dalam format JSON
+        return DataTables::of($table)
+            ->addIndexColumn() // Menambahkan kolom indeks untuk nomor urut
+
+            // Mengedit kolom 'Bahan' untuk menampilkan nama bahan berdasarkan ID
+            ->editColumn('Bahan_baku', function ($row) {
+                // Mengambil data bahan dari tabel TbMasterBahan berdasarkan ID bahan
+                Carbon::setLocale('id');
+                $bahan = TbMasterBahan::findOrFail($row->id_bahan);
+                $tanggalKedatangan = Carbon::parse($row->tanggal_kedatangan)->isoFormat('dddd, D MMMM YYYY HH:mm:ss');
+
+                // Mengembalikan nama bahan, jika tidak ada maka menampilkan '-'
+                return $bahan->bahan . ' | ' . $tanggalKedatangan ?? '-';
+            })
+
+            // Menambahkan kolom 'Jumlah_Bahan_baku' yang menampilkan jumlah bahan beserta satuannya
+            ->addColumn('Jumlah_Bahan_baku', function ($row) {
+                // Mengambil data bahan dari tabel TbMasterBahan berdasarkan ID bahan
+                $bahan  = TbMasterBahan::findOrFail($row->id_bahan);
+                // Mengambil data satuan dari tabel TbSatuan berdasarkan ID satuan bahan
+                $data_rincian_bahan_menu = rincian_menu_harian::find($row->id_rincian_bahan);
+                $satuan = TbSatuan::findOrFail($row->satuan);
+                if($data_rincian_bahan_menu)
+                {
+                    $satuan = TbSatuan::findOrFail($data_rincian_bahan_menu->id_satuan);
+
+                }
+                
+                // Menampilkan jumlah bahan dengan format ribuan dan menambahkan satuan bahan
+                return number_format($row->jumlah_bahan, 0, ',', '.') . " " . ($satuan->satuan ?? '-');
+            })
+
+            // Menambahkan kolom 'Jumlah_PO_bahan_baku' yang menampilkan jumlah PO bahan baku dengan format mata uang
+            ->addColumn('Jumlah_PO_bahan_baku', function ($row) {
+                // Menampilkan jumlah PO dengan format mata uang 'Rp.' dan pemisah ribuan
+                return "Rp. " . number_format($row->jumlah_po, 0, ',', '.');
+            })
+            ->addColumn('action', function ($row) {
+                // Menampilkan jumlah PO dengan format mata uang 'Rp.' dan pemisah ribuan
+                return "Rp. " . number_format($row->jumlah_po, 0, ',', '.');
+            })
+            // Menambahkan kolom 'action' untuk tombol edit
+            ->addColumn('action', function ($row) {
+                // Tombol Edit untuk membuka modal
+                return '<button class="btn btn-primary btn-sm" onclick="editModal(' . $row->id . ')">Edit</button>';
+            })
+            ->rawColumns(['action', 'Jumlah_PO_bahan_baku', 'Jumlah_Bahan_baku', 'Bahan_baku'])
+
+            // Menghasilkan data dalam format JSON untuk DataTables
+            ->make(true);
+    }
+
+    // Endpoint untuk mengambil data bahan berdasarkan ID
+    public function get_EditData($id)
+    {
+        $data = TbPoBahan::findOrFail($id);
+
+        // Mengambil data bahan terkait
+        $bahan = TbMasterBahan::findOrFail($data->id_bahan);
+        $rincian_bahan = rincian_menu_harian::find($data->id_rincian_bahan);
+        return response()->json([
+            'id' => $data->id,
+            'bahan' => $bahan->bahan,
+            'jumlah_bahan' => $data->jumlah_bahan,
+            'harga'     => $rincian_bahan->harga ?? 0,
+            'jumlah_po' => $data->jumlah_po,
+            'jumlah_box' => $data->jumlah_box ?? 1,
+            'tanggal_kedatangan' => $data->tanggal_kedatangan, // Hanya tanggal
+            'tanggal_digunakan' => $data->tanggal_digunakan,
+            'keterangan' => $data->keterangan,
+        ]);
+    }
+
+    public function update_Data_po(Request $request)
+    {
+        // Validasi input dari request
+        $validated = $request->validate([
+            'id' => 'required|integer|exists:tb_po_bahan,id',
+            'bahan' => 'required|string|max:255',
+            'jumlah_bahan' => 'required|numeric',
+            'jumlah_po' => 'required|numeric',
+            'tanggal_kedatangan' => 'required|date',
+            'tanggal_digunakan' => 'required|date',
+        ]);
+
+
+
+        // Temukan data yang akan diperbarui
+        $data = TbPoBahan::findOrFail($request->id);
+
+        // Perbarui data
+        $data->jumlah_bahan = $request->jumlah_bahan;
+        $data->jumlah_po = $request->jumlah_po;
+        $data->jumlah_box = $request->jumlah_box;
+        $data->tanggal_kedatangan = $request->tanggal_kedatangan;
+        $data->tanggal_digunakan = $request->tanggal_digunakan;
+        $data->keterangan = $request->keterangan;
+        
+        // Simpan perubahan
+        try {
+            $data->save();
+            if($data->id_rincian_bahan != 0 )
+            {
+                $rincian_menu = rincian_menu_harian::find($data->id_rincian_bahan);
+
+                $rincian_menu->update([
+                    'jumlah'    => $data->jumlah_bahan,
+                    'harga'    => $request->harga,
+                    'total_harga'    => $data->jumlah_po,
+                ]);
+                $rincian_menu = TbRincianMenuTemp::where('id_menu',$rincian_menu->id_menu_harian)
+                                ->where('id_resep', $rincian_menu->id_resep)
+                                ->where('id_bahan', $rincian_menu->id_bahan)
+                                ->update([
+                                    'jumlah'    => $data->jumlah_bahan,
+                                    'harga'    => $request->harga,
+                                    'total_harga'    => $data->jumlah_po,
+                                    'updated_at'    => \Carbon\Carbon::now(),
+                                ]);
+            }
+            
+
+            return response()->json(['message' => 'Data berhasil diperbarui']);
+        } catch (\Exception $e) {
+            // Jika ada kesalahan saat menyimpan data, tangkap dan tampilkan error
+            return response()->json(['error' => 'Gagal memperbarui data', 'details' => $e->getMessage()], 500);
+        }
+    }
+
+    public function pdf_pengajuan_po_tanpa_harga_lama($id)
+    {
+
+        $dapur      = DataDapur::first();
+        $po         = TbPo::where('id', $id)->first();
+
+        $kontrak    = TbKontrak::where('id', $po->id_kontrak)->first();
+        $Supplier   = Supplier::where('id', $kontrak->id_supplier)->first();
+        /* $rincian_po = DB::table('tb_menu')
+            ->join('rincian_menu_harian', 'tb_menu.id', '=', 'rincian_menu_harian.id_menu_harian')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('tb_spesifikasi_bahan', 'tb_spesifikasi_bahan.id', '=', 'tb_master_bahan.id')
+            ->where('tb_menu.id', $id_menu)
+            ->select([
+                'tb_menu.id',
+                'tb_menu.tanggal_kirim',
+                'rincian_menu_harian.id_resep',
+                'tb_master_bahan.bahan',
+                'tb_master_bahan.id as idbahan',
+                DB::raw("COALESCE(tb_spesifikasi_bahan.spesifikasi, '-') as spesifikasi"),
+                'rincian_menu_harian.id as id_rincian_menu',
+                'rincian_menu_harian.jumlah',
+                'tb_satuan.satuan',
+            ])
+            ->get();
+        */
+        $sample_rincian_po = DB::table('tb_po_bahan')
+            ->join('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('rincian_menu_harian', 'tb_po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->leftJoin('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->where('tb_po_bahan.id_po', $id)
+            ->select([
+                'rincian_menu_harian.id_menu_harian'
+            ])
+            ->orderByDesc('tb_po_bahan.id')->first();
+        $jumlah_pack = rincian_sekolah::where('id_menu_harian', $sample_rincian_po->id_menu_harian)->sum('jumlah_penerima_total');
+        $rincian_po = DB::table('tb_po_bahan')
+            ->join('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('rincian_menu_harian', 'tb_po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->leftJoin('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->where('tb_po_bahan.id_po', $id)
+            ->select([
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'tb_po_bahan.id',
+                'tb_po_bahan.id_po',
+                'tb_master_bahan.bahan',
+                'tb_po_bahan.jumlah_bahan',
+                'tb_po_bahan.buffer',
+                'tb_satuan.satuan',
+                'tb_po_bahan.keterangan',
+                'tb_po_bahan.tanggal_kedatangan',
+                'tb_resep.nama_resep as resep',
+                'rincian_menu_harian.id_menu_harian'
+            ])
+            ->get();
+        $total = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_po');
+
+        $totalberas = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', '=', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', '=', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->where('po.id', $id)
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->where('bahan.bahan', 'beras')
+            ->select(DB::raw('(po_bahan.jumlah_bahan + po_bahan.buffer) as total_beras'))
+            ->first('');
+        //->sum('po_bahan.jumlah_bahan');
+        $totalBerasKg = $totalberas->total_beras / 1000 ?? 0;
+        // Packing beras
+        /*$pack25 = floor($totalBerasKg / 25);
+        $sisa = $totalBerasKg % 25;
+
+        $pack5 = floor($sisa / 5);
+        $sisa = $sisa % 5;
+
+        $pack1 = $sisa > 0 ? 1 : 0;
+        */
+        //$pack25 = $id.' '. $po->id_kontrak .' '. $totalBerasKg;
+        $pack_utama = $totalBerasKg / 36;
+        $pack25 = floor($pack_utama) * 1;
+        $pack5 = floor($pack_utama) * 2;
+        $pack1 = floor($pack_utama) * 1;
+        $sisa = $totalBerasKg - floor($pack_utama) * 36;
+        $pack5 = floor($sisa / 5) + $pack5;
+        $pack1 = ($sisa % 5) + $pack1;
+
+        $pdf = Pdf::loadView('office/PO.template_pengajuan_po_2', compact(
+            'po',
+            'dapur',
+            'kontrak',
+            'Supplier',
+            'rincian_po',
+            'total',
+            'pack25',
+            'pack5',
+            'pack1',
+            'totalBerasKg',
+            'jumlah_pack'
+        ))->setPaper('a4', 'landscape');
+
+        $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+        return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+    }
+
+    public function pdf_pengajuan_po_tanpa_harga($id)
+    {
+
+        $dapur      = DataDapur::first();
+        $po         = TbPo::where('id', $id)->first();
+
+        $kontrak    = TbKontrak::where('id', $po->id_kontrak)->first();
+        $Supplier   = Supplier::where('id', $kontrak->id_supplier)->first();
+        /* $rincian_po = DB::table('tb_menu')
+            ->join('rincian_menu_harian', 'tb_menu.id', '=', 'rincian_menu_harian.id_menu_harian')
+            ->join('tb_master_bahan', 'rincian_menu_harian.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('tb_spesifikasi_bahan', 'tb_spesifikasi_bahan.id', '=', 'tb_master_bahan.id')
+            ->where('tb_menu.id', $id_menu)
+            ->select([
+                'tb_menu.id',
+                'tb_menu.tanggal_kirim',
+                'rincian_menu_harian.id_resep',
+                'tb_master_bahan.bahan',
+                'tb_master_bahan.id as idbahan',
+                DB::raw("COALESCE(tb_spesifikasi_bahan.spesifikasi, '-') as spesifikasi"),
+                'rincian_menu_harian.id as id_rincian_menu',
+                'rincian_menu_harian.jumlah',
+                'tb_satuan.satuan',
+            ])
+            ->get();
+        */
+        $sample_rincian_po = DB::table('tb_po_bahan')
+            ->join('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('rincian_menu_harian', 'tb_po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->leftJoin('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->where('tb_po_bahan.id_po', $id)
+            ->select([
+                'rincian_menu_harian.id_menu_harian'
+            ])
+            ->orderByDesc('tb_po_bahan.id')->first();
+        $jumlah_pack = rincian_sekolah::where('id_menu_harian', $sample_rincian_po->id_menu_harian)->sum('jumlah_penerima_total');
+        $rincian_po = DB::table('tb_po_bahan as po_bahan')
+                        ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+                        ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+                        ->join('rincian_menu_harian', 'po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+                        ->join('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+                        ->join('tb_rincian_kontrak', 'rincian_menu_harian.id_kontrak', '=', 'tb_rincian_kontrak.id')
+                        ->join('tb_satuan', 'rincian_menu_harian.id_satuan', '=', 'tb_satuan.id')
+                        ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', '=', 'satuan2.id')
+                        
+                        ->selectRaw('
+                    @rownum := @rownum + 1 AS nomor_urut,
+                    bahan.bahan,
+                    po_bahan.tanggal_kedatangan,
+                    po_bahan.jumlah_bahan,
+                    po_bahan.jumlah_po,
+                    po_bahan.keterangan,
+                    po_bahan.jumlah_box,
+                    tb_resep.nama_resep,
+                    tb_resep.id as id_resep,
+                    tb_rincian_kontrak.harga_bahan,
+                    COALESCE(tb_rincian_kontrak.merek_bahan, "-") AS merek_bahan,
+                    tb_satuan.satuan,
+                    satuan2.satuan AS satuan_kontrak
+                ')
+                        ->where('po.id', $id)
+                        //->where('tb_rincian_kontrak.status', 1)
+                        ->get();
+        /*$rincian_po = DB::table('tb_po_bahan')
+            ->join('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->leftJoin('rincian_menu_harian', 'tb_po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->leftJoin('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->where('tb_po_bahan.id_po', $id)
+            ->select([
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'tb_po_bahan.id',
+                'tb_po_bahan.id_po',
+                'tb_master_bahan.bahan',
+                'tb_po_bahan.jumlah_bahan',
+                'tb_po_bahan.buffer',
+                'tb_satuan.satuan',
+                'tb_po_bahan.keterangan',
+                'tb_po_bahan.tanggal_kedatangan',
+                'tb_resep.nama_resep as resep',
+                'rincian_menu_harian.id_menu_harian'
+            ])
+            ->get();*/
+        $cheklist = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+            ->join('rincian_menu_harian', 'po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+            ->join('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+            ->join('tb_rincian_kontrak', 'rincian_menu_harian.id_kontrak', '=', 'tb_rincian_kontrak.id')
+            ->join('tb_satuan', 'rincian_menu_harian.id_satuan', '=', 'tb_satuan.id')
+            ->join('tb_satuan as satuan2', 'tb_rincian_kontrak.satuan_bahan', '=', 'satuan2.id')
+
+            ->selectRaw('
+                    @rownum := @rownum + 1 AS nomor_urut,
+                    bahan.bahan,
+                    po_bahan.tanggal_kedatangan,
+                    po_bahan.jumlah_bahan,
+                    po_bahan.jumlah_po,
+                    po_bahan.keterangan,
+                    po_bahan.jumlah_box,
+                    tb_resep.nama_resep,
+                    tb_resep.id as id_resep,
+                    tb_rincian_kontrak.harga_bahan,
+                    COALESCE(tb_rincian_kontrak.merek_bahan, "-") AS merek_bahan,
+                    tb_satuan.satuan,
+                    satuan2.satuan AS satuan_kontrak
+                ')
+            ->where('po.id', $id)
+            //->where('tb_rincian_kontrak.status', 1)
+            ->count();
+
+        if($cheklist < 1)
+        {
+            $rincian_po = DB::table('tb_po_bahan')
+                ->join('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+                ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+                ->leftJoin('rincian_menu_harian', 'tb_po_bahan.id_rincian_bahan', '=', 'rincian_menu_harian.id')
+                ->leftJoin('tb_resep', 'rincian_menu_harian.id_resep', '=', 'tb_resep.id')
+                ->where('tb_po_bahan.id_po', $id)
+                ->select([
+                    DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                    'tb_po_bahan.id',
+                    'tb_po_bahan.id_po',
+                    'tb_master_bahan.bahan',
+                    'tb_po_bahan.jumlah_bahan',
+                    'tb_po_bahan.buffer',
+                    'tb_satuan.satuan',
+                    'tb_po_bahan.keterangan',
+                    'tb_po_bahan.tanggal_kedatangan',
+                    'tb_resep.nama_resep as resep',
+                    'rincian_menu_harian.id_menu_harian'
+                ])
+                ->get();
+        }
+        $total = DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', 'bahan.id')
+            ->join('tb_rincian_kontrak', 'bahan.id', 'tb_rincian_kontrak.id_bahan')
+            ->join('tb_kontrak', 'tb_rincian_kontrak.id_kontrak', 'tb_kontrak.id')
+            ->join('tb_satuan', 'bahan.satuan_bahan', 'tb_satuan.id')
+
+            ->where('tb_kontrak.id', $po->id_kontrak)
+            ->select(
+                DB::raw('@rownum := @rownum + 1 AS nomor_urut'),
+                'bahan.bahan',
+                'tb_rincian_kontrak.harga_bahan',
+                'po_bahan.tanggal_kedatangan',
+                'po_bahan.jumlah_bahan',
+                'tb_satuan.satuan',
+                'po_bahan.jumlah_po'
+
+            )
+            ->crossJoin(DB::raw('(SELECT @rownum := 0) AS r')) // Inisial
+            ->sum('po_bahan.jumlah_po');
+
+        $totalberas =
+            DB::table('tb_po_bahan as po_bahan')
+            ->join('tb_po as po', 'po_bahan.id_po', '=', 'po.id')
+            ->join('tb_master_bahan as bahan', 'po_bahan.id_bahan', '=', 'bahan.id')
+            ->where('po.id', $id)
+            ->where('bahan.bahan', 'beras')
+            ->sum('po_bahan.jumlah_bahan');
+        $totalBerasKg = $totalberas  ?? 0;
+        // Packing beras
+        /*$pack25 = floor($totalBerasKg / 25);
+        $sisa = $totalBerasKg % 25;
+
+        $pack5 = floor($sisa / 5);
+        $sisa = $sisa % 5;
+
+        $pack1 = $sisa > 0 ? 1 : 0;
+        */
+        //$pack25 = $id.' '. $po->id_kontrak .' '. $totalBerasKg;
+        $pack_utama = $totalBerasKg / 36;
+        $pack25 = floor($pack_utama) * 1;
+        $pack5 = floor($pack_utama) * 2;
+        $pack1 = floor($pack_utama) * 1;
+        $sisa = $totalBerasKg - floor($pack_utama) * 36;
+        $pack5 = floor($sisa / 5) + $pack5;
+        $pack1 = ($sisa % 5) + $pack1;
+
+        $menu = Menu::find($sample_rincian_po->id_menu_harian);
+        $pdf = Pdf::loadView('office/PO.template_pengajuan_po_2', compact(
+            'po',
+            'dapur',
+            'kontrak',
+            'Supplier',
+            'rincian_po',
+            'total',
+            'pack25',
+            'pack5',
+            'pack1',
+            'totalBerasKg',
+            'jumlah_pack'
+        ))->setPaper('a4', 'landscape');
+
+        $tanggal_pengajuan = $po->tanggal_pengajuan = Carbon::parse($po->tanggal_pengajuan)->format('d-m-Y');
+        return $pdf->download('Formulir_Pengajuan_PO ' . $tanggal_pengajuan . '.pdf');
+    }
+}

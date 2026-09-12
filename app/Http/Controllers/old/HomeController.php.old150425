@@ -1,0 +1,197 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use Yajra\DataTables\Facades\DataTables;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\View\View;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use Barryvdh\DomPDF\Facade\Pdf;
+use App\Models\DataSekolah;
+use App\Models\Supplier;
+use App\Models\TbOmpreng;
+use App\Models\rincian_sekolah;
+use App\Models\Menu;
+
+class HomeController extends Controller
+{
+    /**
+     * Menampilkan halaman dashboard utama
+     */
+    public function index()
+    {
+        $header = "Dashboard";
+        
+        return view('Home', compact('header'));
+    }
+
+    /**
+     * Menampilkan dashboard office dengan data sekolah dan supplier
+     */
+    public function v_office()
+    {
+        $header = "Dashboard";
+        $jumlah_sekolah_all     = DataSekolah::count();
+        $penerima_sekolah_all   = DataSekolah::sum('jumlah_siswa');
+
+        $jumlah_sekolah_tk      = DataSekolah::where('jenjang_sekolah', 'TK/Sederajat')->count();
+        $penerima_sekolah_tk    = DataSekolah::where('jenjang_sekolah', 'TK/Sederajat')->sum('jumlah_siswa');
+
+        $jumlah_sekolah_sd      = DataSekolah::where('jenjang_sekolah', 'SD/Sederajat')->count();
+        $penerima_sekolah_sd    = DataSekolah::where('jenjang_sekolah', 'SD/Sederajat')->sum('jumlah_siswa');
+
+        $jumlah_sekolah_smp     = DataSekolah::where('jenjang_sekolah', 'SMP/Sederajat')->count();
+        $penerima_sekolah_smp   = DataSekolah::where('jenjang_sekolah', 'SMP/Sederajat')->sum('jumlah_siswa');
+
+        $jumlah_sekolah_sma     = DataSekolah::where('jenjang_sekolah', 'SMA/Sederajat')->count();
+        $penerima_sekolah_sma   = DataSekolah::where('jenjang_sekolah', 'SMA/Sederajat')->sum('jumlah_siswa');
+
+        $jumlah_sekolah_ibu     = DataSekolah::where('jenjang_sekolah', 'ibu')->count();
+        $penerima_sekolah_ibu   = DataSekolah::where('jenjang_sekolah', 'ibu')->sum('jumlah_siswa');
+
+        $supplier           = Supplier::count();
+
+        return view('office.dashboard', compact(
+            'header',
+            'jumlah_sekolah_all',
+            'penerima_sekolah_all',
+            'jumlah_sekolah_tk',
+            'penerima_sekolah_tk',
+            'jumlah_sekolah_sd',
+            'penerima_sekolah_sd',
+            'jumlah_sekolah_smp',
+            'penerima_sekolah_smp',
+            'jumlah_sekolah_sma',
+            'penerima_sekolah_sma',
+            'jumlah_sekolah_ibu',
+            'penerima_sekolah_ibu',
+            'supplier'
+        ));
+    }
+
+    /**
+     * Menampilkan dashboard penerimaan dengan jumlah PO bahan yang datang hari ini
+     */
+    public function v_penerimaan()
+    {
+        $header = "Dashboard";
+
+        // Menghitung jumlah PO bahan yang datang hari ini
+        $jumlah_po_datang = DB::table('tb_po_bahan')
+            ->leftJoin('tb_penerimaan', 'tb_po_bahan.id', '=', 'tb_penerimaan.id_barang_po')
+            ->leftJoin('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->leftJoin('tb_po', 'tb_po_bahan.id_po', '=', 'tb_po.id')
+            ->leftJoin('tb_kontrak', 'tb_po.id_kontrak', '=', 'tb_kontrak.id')
+            ->leftJoin('tb_supplier', 'tb_kontrak.id_supplier', '=', 'tb_supplier.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->whereRaw("DATE(tb_po_bahan.tanggal_kedatangan) = CURDATE()")
+            ->count();
+        $wadah_total    =  DB::table('tb_wadah')->count();
+        $wadah_terpakai =  DB::table('tb_wadah')->where('status',1)->count();
+        $wadah_belum_terpakai =  DB::table('tb_wadah')->where('status', 0)->count();
+        
+        return view('penerimaan.dashboard', compact('header', 'jumlah_po_datang', 'wadah_total', 'wadah_terpakai', 'wadah_belum_terpakai'));
+    }
+
+    public function v_penerimaan_tv()
+    {
+        $header = "Dashboard";
+
+        // Menghitung jumlah PO bahan yang datang hari ini
+        $jumlah_po_datang = DB::table('tb_po_bahan')
+            ->leftJoin('tb_penerimaan', 'tb_po_bahan.id', '=', 'tb_penerimaan.id_barang_po')
+            ->leftJoin('tb_master_bahan', 'tb_po_bahan.id_bahan', '=', 'tb_master_bahan.id')
+            ->leftJoin('tb_po', 'tb_po_bahan.id_po', '=', 'tb_po.id')
+            ->leftJoin('tb_kontrak', 'tb_po.id_kontrak', '=', 'tb_kontrak.id')
+            ->leftJoin('tb_supplier', 'tb_kontrak.id_supplier', '=', 'tb_supplier.id')
+            ->join('tb_satuan', 'tb_master_bahan.satuan_bahan', '=', 'tb_satuan.id')
+            ->whereRaw("DATE(tb_po_bahan.tanggal_kedatangan) = CURDATE()")
+            ->count();
+        $wadah_total    =  DB::table('tb_wadah')->count();
+        $wadah_terpakai =  DB::table('tb_wadah')->where('status', 1)->count();
+        $wadah_belum_terpakai =  DB::table('tb_wadah')->where('status', 0)->count();
+        return redirect('/penerimaan_bahan');
+        //return view('dashboard_tv.dashboard_penerimaan', compact('header', 'jumlah_po_datang', 'wadah_total', 'wadah_terpakai', 'wadah_belum_terpakai'));
+    }
+
+    /**
+     * Menampilkan dashboard warehouse dengan daftar bahan baku
+     */
+    public function v_warehouse()
+    {
+        $header = "List Bahan Baku Tersimpan";
+        $header2 = "List Bahan Baku yang Digunakan";
+        $now = Carbon::now('Asia/Jakarta'); // pastikan waktu Indonesia
+
+        // Default: hari ini atau besok
+        if ($now->hour >= 13) {
+            $tanggalKirim = $now->copy()->addDay();
+            $keterangan_menu = 'hari besok';
+        } else {
+            $tanggalKirim = $now->copy();
+            $keterangan_menu = 'hari ini';
+        }
+
+        // Cek jika hari Minggu, maka ubah ke Senin
+        if ($tanggalKirim->isSunday()) {
+            $tanggalKirim->addDay(); // jadi Senin
+            $keterangan_menu = 'hari Senin';
+        }
+
+        $tanggalKirimFormatted = $tanggalKirim->translatedFormat('l, j F Y');
+
+        $menus = Menu::join('tb_resep as karbohidrat_bahan', 'tb_menu.karbohidrat', '=', 'karbohidrat_bahan.id')
+            ->join('tb_resep as protein_bahan', 'tb_menu.protein', '=', 'protein_bahan.id')
+            ->join('tb_resep as sayur_bahan', 'tb_menu.sayur', '=', 'sayur_bahan.id')
+            ->join('tb_resep as buah_bahan', 'tb_menu.buah', '=', 'buah_bahan.id')
+            ->join('tb_resep as susu_bahan', 'tb_menu.susu', '=', 'susu_bahan.id')
+            ->whereDate('tb_menu.tanggal_kirim', $tanggalKirim)
+            ->select(
+                'tb_menu.id as id_menu',
+                'tb_menu.karbohidrat',
+                'tb_menu.protein',
+                'tb_menu.sayur',
+                'tb_menu.buah',
+                'tb_menu.susu',
+                'karbohidrat_bahan.nama_resep as nama_karbohidrat',
+                'protein_bahan.nama_resep as nama_protein',
+                'sayur_bahan.nama_resep as nama_sayur',
+                'buah_bahan.nama_resep as nama_buah',
+                'susu_bahan.nama_resep as nama_susu'
+            )->first();
+        $total = rincian_sekolah::where('id_menu_harian', $menus->id_menu)->sum('jumlah_penerima_total');
+        return view('warehouse.dashboard', compact('header', 'header2','menus','total', 'tanggalKirimFormatted', 'keterangan_menu'));
+    }
+
+    /**
+     * Menampilkan dashboard packaging
+     */
+    public function v_packaging()
+    {
+        $header = "Dashboard";
+
+        return view('packaging.dashboard', compact('header'));
+    }
+
+    public function v_packaging_tv()
+    {
+        $header = "ompreng";
+        $jumlah_rantang = TbOmpreng::where('jenis', 'Rantang')->count();
+        $jumlah_ompreng = TbOmpreng::where('jenis', 'Ompreng')->count();
+       // return view('dashboard_tv.dashboard_packaging', compact('header', 'jumlah_rantang', 'jumlah_ompreng'));
+      return redirect('/packing/formPacking-b');
+    }
+
+    /**
+     * Menampilkan dashboard laboratorium
+     */
+    public function v_laboratorium()
+    {
+        $header = "Dashboard";
+
+        return view('office.dashboard', compact('header'));
+    }
+}

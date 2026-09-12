@@ -1,0 +1,8 @@
+### Request Penerima Makan Hari Ini
+POST http://127.0.0.1:8000/api/penerima-makan-gratis
+Content-Type: application/json
+
+{
+    "nomor_dapur": "D123",
+    "tanggal": "2025-03-12"
+}
